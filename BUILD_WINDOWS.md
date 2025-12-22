@@ -57,11 +57,13 @@ O executável estará em: `build/windows/x64/runner/Release/mx_cloud_pdv.exe`
 
 ```bash
 # Flavor mobile
-flutter build windows --release --flavor mobile
+flutter build windows --release --dart-define=FLAVOR=mobile
 
 # Flavor stoneP2
-flutter build windows --release --flavor stoneP2
+flutter build windows --release --dart-define=FLAVOR=stoneP2
 ```
+
+**Nota**: No Windows, os flavors são passados via `--dart-define=FLAVOR=...` em vez de `--flavor`, que é específico do Android.
 
 ## 📦 Distribuição
 
