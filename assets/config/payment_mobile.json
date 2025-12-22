@@ -1,0 +1,6 @@
+{
+  "availableProviders": ["cash", "deep_link"],
+  "defaultProvider": null,
+  "enableAutoDetection": false
+}
+

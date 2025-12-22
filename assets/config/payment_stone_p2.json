@@ -1,0 +1,17 @@
+{
+  "availableProviders": ["cash", "stone_p2_deeplink", "stone_pos"],
+  "defaultProvider": "stone_pos",
+  "enableAutoDetection": false,
+  "providerSettings": {
+    "stone_p2_deeplink": {
+      "model": "P2",
+      "returnScheme": "deeplinkmxcloudpdv://pay-response"
+    },
+    "stone_pos": {
+      "appName": "MX Cloud PDV",
+      "stoneCode": "206192723",
+      "model": "P2"
+    }
+  }
+}
+

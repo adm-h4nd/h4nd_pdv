@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Círculo externo com gradiente (cores do logo MX) -->
+    <item>
+        <shape android:shape="oval">
+            <size
+                android:width="120dp"
+                android:height="120dp" />
+            <gradient
+                android:type="linear"
+                android:angle="135"
+                android:startColor="#00A8E8"
+                android:centerColor="#0077B6"
+                android:endColor="#8BC34A" />
+        </shape>
+    </item>
+    
+    <!-- Círculo interno branco (80% do tamanho) -->
+    <item
+        android:top="12dp"
+        android:bottom="12dp"
+        android:left="12dp"
+        android:right="12dp">
+        <shape android:shape="oval">
+            <solid android:color="#FFFFFF" />
+        </shape>
+    </item>
+    
+    <!-- Texto "MX" com gradiente azul -->
+    <!-- Letra M (simplificada) -->
+    <item
+        android:top="42dp"
+        android:bottom="78dp"
+        android:left="28dp"
+        android:right="60dp">
+        <shape android:shape="rectangle">
+            <gradient
+                android:type="linear"
+                android:angle="45"
+                android:startColor="#00A8E8"
+                android:endColor="#0077B6" />
+            <corners android:radius="3dp" />
+        </shape>
+    </item>
+    
+    <!-- Letra X (simplificada) -->
+    <item
+        android:top="42dp"
+        android:bottom="78dp"
+        android:left="60dp"
+        android:right="92dp">
+        <shape android:shape="rectangle">
+            <gradient
+                android:type="linear"
+                android:angle="45"
+                android:startColor="#0077B6"
+                android:endColor="#00A8E8" />
+            <corners android:radius="3dp" />
+        </shape>
+    </item>
+</layer-list>

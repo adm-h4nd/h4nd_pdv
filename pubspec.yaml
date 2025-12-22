@@ -1,0 +1,81 @@
+name: mx_cloud_pdv
+description: Sistema PDV Multi-segmento com Flutter
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # State Management
+  provider: ^6.1.1
+  
+  # Network
+  http: ^1.1.0
+  dio: ^5.4.0
+  
+  # Storage
+  shared_preferences: ^2.2.2
+  flutter_secure_storage: ^9.0.0
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  path_provider: ^2.1.1
+  
+  # Navigation
+  go_router: ^13.0.0
+  
+  # JSON Serialization
+  json_annotation: ^4.8.1
+  
+  # UI Components
+  flutter_svg: ^2.0.9
+  google_fonts: ^6.1.0
+  
+  # Utils
+  intl: ^0.19.0
+  crypto: ^3.0.3
+  uuid: ^4.3.3
+  url_launcher: ^6.2.5
+  package_info_plus: ^8.0.0
+  app_links: ^6.3.3  # Para escutar deeplinks
+  
+  # PDF Generation
+  pdf: ^3.10.0
+  printing: ^5.12.0
+  share_plus: ^7.2.1
+  
+  # Payment SDKs (condicionais por flavor)
+  # stone_payments: necessário para compilar código Dart
+  # As dependências nativas serão excluídas no build.gradle.kts para o flavor mobile
+  stone_payments: ^1.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  build_runner: ^2.4.7
+  json_serializable: ^6.7.1
+  hive_generator: ^2.0.1
+  flutter_native_splash: ^2.4.0
+
+flutter:
+  uses-material-design: true
+  
+  assets:
+    - assets/images/
+    - assets/icons/
+    - assets/config/
+
+# Configuração da splash screen nativa - remove a splash branca do Flutter
+flutter_native_splash:
+  color: "#6366F1"  # Cor base do gradiente (roxo)
+  android: true
+  ios: false
+  web: false
+  android_12:
+    color: "#6366F1"
+
+

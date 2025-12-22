@@ -1,0 +1,993 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../../core/adaptive_layout/adaptive_layout.dart';
+import '../../core/theme/app_theme.dart';
+import '../../presentation/providers/services_provider.dart';
+import '../../data/models/core/pedido_com_itens_pdv_dto.dart';
+import '../../data/models/core/pedidos_com_venda_comandas_dto.dart';
+import '../../data/models/local/pedido_local.dart';
+import '../../data/models/local/sync_status_pedido.dart';
+import '../../data/models/core/produto_agrupado.dart';
+import '../../data/models/modules/restaurante/configuracao_restaurante_dto.dart';
+import '../../data/repositories/pedido_local_repository.dart';
+import '../../data/services/core/pedido_service.dart';
+import '../pedidos/restaurante/novo_pedido_restaurante_screen.dart';
+import '../pedidos/restaurante/dialogs/selecionar_mesa_comanda_dialog.dart';
+import '../../data/models/core/vendas/venda_dto.dart';
+import '../../data/models/core/vendas/pagamento_venda_dto.dart';
+import '../../data/services/modules/restaurante/mesa_service.dart';
+import '../../data/services/modules/restaurante/comanda_service.dart';
+import '../../data/services/core/venda_service.dart';
+import '../../core/printing/print_service.dart';
+import '../../core/printing/print_data.dart';
+import '../../core/printing/print_config.dart';
+import '../pagamento/pagamento_restaurante_screen.dart';
+import '../../core/widgets/app_toast.dart';
+import '../../core/widgets/app_dialog.dart';
+import '../../data/models/modules/restaurante/comanda_list_item.dart';
+import 'package:intl/intl.dart';
+// Novos imports para modelos e widgets extraídos
+import '../../models/mesas/entidade_produtos.dart' show TipoEntidade, MesaComandaInfo;
+import '../../models/mesas/comanda_com_produtos.dart';
+import '../../models/mesas/tab_data.dart';
+import '../../widgets/mesas/tabs_scrollable_widget.dart';
+import '../../widgets/mesas/produto_card_widget.dart';
+import '../../widgets/mesas/total_item_widget.dart';
+import '../../widgets/mesas/historico_pagamentos_widget.dart';
+import '../../widgets/mesas/enhanced_app_bar_widget.dart';
+import '../../widgets/mesas/compact_header_widget.dart';
+import '../../widgets/mesas/comanda_card_widget.dart';
+import '../../widgets/mesas/botoes_acao_widget.dart';
+import '../../core/utils/date_formatter.dart';
+import '../../core/utils/status_utils.dart';
+import '../../core/events/app_event_bus.dart';
+import '../../presentation/providers/mesa_detalhes_provider.dart';
+
+/// Resultado do cálculo de pagamentos
+class _PagamentosCalculados {
+  final List<PagamentoVendaDto> pagamentos;
+  final double valorPago;
+
+  _PagamentosCalculados({
+    required this.pagamentos,
+    required this.valorPago,
+  });
+}
+
+/// Tela de detalhes de produtos agrupados (mesa ou comanda)
+class DetalhesProdutosMesaScreen extends StatefulWidget {
+  final MesaComandaInfo entidade;
+
+  const DetalhesProdutosMesaScreen({
+    super.key,
+    required this.entidade,
+  });
+
+  @override
+  State<DetalhesProdutosMesaScreen> createState() => _DetalhesProdutosMesaScreenState();
+}
+
+class _DetalhesProdutosMesaScreenState extends State<DetalhesProdutosMesaScreen> {
+  late MesaDetalhesProvider _provider;
+  final _pedidoRepo = PedidoLocalRepository();
+
+  ServicesProvider get _servicesProvider {
+    return Provider.of<ServicesProvider>(context, listen: false);
+  }
+
+  ConfiguracaoRestauranteDto? get _configuracaoRestaurante {
+    return _servicesProvider.configuracaoRestaurante;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _pedidoRepo.getAll(); // Garante que a box está aberta
+    
+    // Carrega configuração do restaurante se ainda não foi carregada (cacheada no ServicesProvider)
+    // Não bloqueia a UI - carrega em background
+    if (!_servicesProvider.configuracaoRestauranteCarregada) {
+      _servicesProvider.carregarConfiguracaoRestaurante().catchError((e) {
+        debugPrint('⚠️ Erro ao carregar configuração do restaurante: $e');
+      });
+    }
+    
+    // Cria o provider com as dependências necessárias
+    _provider = MesaDetalhesProvider(
+      entidade: widget.entidade,
+      pedidoService: _servicesProvider.pedidoService,
+      mesaService: _servicesProvider.mesaService,
+      comandaService: _servicesProvider.comandaService,
+      vendaService: _servicesProvider.vendaService,
+      configuracaoRestaurante: _configuracaoRestaurante,
+      pedidoRepo: _pedidoRepo,
+    );
+    
+    // Carrega produtos quando o widget é criado
+    // O widget é sempre recriado quando muda a mesa/comanda devido ao ValueKey único
+    _provider.loadProdutos();
+    _provider.loadVendaAtual();
+    // Comandas serão carregadas automaticamente dentro de loadProdutos() quando controle é por comanda
+    
+    // O provider já escuta eventos do AppEventBus, não precisa de listener adicional
+  }
+  
+  @override
+  void dispose() {
+    _provider.dispose();
+    super.dispose();
+  }
+
+  // Métodos _processarComandasDoRetorno, _loadComandasDaMesa, _loadVendaAtual, 
+  // _loadProdutos, _processarItensPedidoServidorCompleto, _processarItensPedidoLocal
+  // e _getPedidosLocais foram migrados para o provider.
+  // Use os métodos do provider em vez disso.
+
+  Color _getStatusColor(String status) {
+    return StatusUtils.getStatusColor(status, widget.entidade.tipo);
+  }
+
+  bool _podeCriarPedido() {
+    // Validação apenas de status (não bloqueia por configuração de controle)
+    // A configuração de controle apenas define o fluxo de seleção, não bloqueia criação de pedido
+    // O bloqueio é apenas no pagamento (quando controle é por comanda, não pode pagar pela mesa)
+    
+    // Usa status visual (considera pedidos locais sincronizando)
+    final statusVisual = _provider.statusVisual.toLowerCase();
+    
+    if (widget.entidade.tipo == TipoEntidade.mesa) {
+      // Mesa: pode criar pedido se estiver Livre (primeiro pedido) ou Ocupada (adicionar mais pedidos)
+      // Não pode criar se estiver em Manutenção, Suspensa ou AguardandoPagamento sem venda
+      if (statusVisual == 'manutencao' || statusVisual == 'suspensa') {
+        return false;
+      }
+      // Se está Livre ou Ocupada, pode criar pedido
+      // Se está AguardandoPagamento, só pode criar se não tiver venda (caso raro, mas permite)
+      return statusVisual == 'livre' || 
+             statusVisual == 'ocupada' || 
+             statusVisual == 'reservada' ||
+             (statusVisual == 'aguardando pagamento' && _provider.vendaAtual == null);
+    } else {
+      // Comanda: pode criar pedido se estiver "Em Uso" (tem sessão ativa)
+      // OU se estiver Livre (primeiro pedido cria a sessão)
+      // Se está sincronizando, considera como "em uso"
+      if (_provider.estaSincronizando || _provider.pedidosPendentes > 0) {
+        return true; // Se tem pedidos locais, pode criar mais pedidos
+      }
+      return statusVisual == 'em uso' || statusVisual == 'livre';
+    }
+  }
+
+  double _calcularTotal() {
+    return _provider.produtosAgrupados.fold(0.0, (sum, produto) => sum + produto.precoTotal);
+  }
+
+  // Método _buildEnhancedAppBar foi extraído para widget separado
+  // Use EnhancedAppBarWidget em vez disso
+
+  @override
+  Widget build(BuildContext context) {
+    final adaptive = AdaptiveLayoutProvider.of(context);
+    if (adaptive == null) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    // Usa Consumer para escutar mudanças do provider
+    return ListenableBuilder(
+      listenable: _provider,
+      builder: (context, _) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8F9FA),
+          appBar: EnhancedAppBarWidget(
+            entidade: widget.entidade,
+            adaptive: adaptive,
+            onRefresh: () => _provider.loadProdutos(refresh: true),
+            statusDinamico: _provider.statusVisual,
+            estaSincronizando: _provider.estaSincronizando,
+            temErros: _provider.temErros,
+            pedidosPendentes: _provider.pedidosPendentes,
+          ),
+      body: Column(
+        children: [
+          // Conteúdo das abas ou lista de produtos (scrollável)
+          Expanded(
+            child: _buildConteudoAbas(adaptive),
+          ),
+
+          // Totais e botões de ação (fixos na parte inferior)
+              Builder(
+                builder: (context) {
+    final produtos = _getProdutosParaAcao();
+    final total = produtos.fold(0.0, (sum, produto) => sum + produto.precoTotal);
+                  final pagamentosCalculados = _calcularPagamentos();
+                  final saldoRestante = total - pagamentosCalculados.valorPago;
+                  final saldoZero = saldoRestante <= 0.01;
+
+                  return BotoesAcaoWidget(
+                    adaptive: adaptive,
+                    podeCriarPedido: _podeCriarPedido(),
+                    deveMostrarBotoesAcao: _deveMostrarBotoesAcao(),
+                    produtos: produtos,
+                    total: total,
+                    valorPago: pagamentosCalculados.valorPago,
+                    pagamentos: pagamentosCalculados.pagamentos,
+                    historicoExpandido: _provider.historicoPagamentosExpandido,
+                    onToggleHistorico: () => _provider.toggleHistoricoPagamentos(),
+                    onNovoPedido: () async {
+                        // Lógica baseada no tipo de entidade e configuração
+                        if (widget.entidade.tipo == TipoEntidade.mesa) {
+                          // Tela de Mesa
+                          if (_configuracaoRestaurante != null && 
+                              _configuracaoRestaurante!.controlePorComanda) {
+                            // Controle por Comanda
+                            // Se estiver em uma aba de comanda específica, usa ela diretamente
+                          if (_provider.abaSelecionada != null) {
+                              // Comanda já está selecionada na aba, usa diretamente
+                              NovoPedidoRestauranteScreen.show(
+                                context,
+                                mesaId: widget.entidade.id,
+                              comandaId: _provider.abaSelecionada,
+                              ).then((_) {
+                                if (mounted) {
+                                _provider.loadProdutos(refresh: true);
+                                _provider.loadVendaAtual();
+                                }
+                              });
+                            } else {
+                              // Visão Geral: mostra modal com mesa pré-selecionada e comanda obrigatória
+                              final resultado = await SelecionarMesaComandaDialog.show(
+                                context,
+                                mesaIdPreSelecionada: widget.entidade.id,
+                              permiteVendaAvulsa: false,
+                              );
+                              
+                              if (resultado != null && resultado.comanda != null && mounted) {
+                                NovoPedidoRestauranteScreen.show(
+                                  context,
+                                  mesaId: resultado.mesa?.id ?? widget.entidade.id,
+                                  comandaId: resultado.comanda!.id,
+                                ).then((_) {
+                                  if (mounted) {
+                                  _provider.loadProdutos(refresh: true);
+                                  _provider.loadVendaAtual();
+                                  }
+                                });
+                              }
+                            }
+                          } else {
+                          // Controle por Mesa: adiciona pedido diretamente
+                            NovoPedidoRestauranteScreen.show(
+                              context,
+                              mesaId: widget.entidade.id,
+                              comandaId: null,
+                            ).then((_) {
+                              if (mounted) {
+                              _provider.loadProdutos(refresh: true);
+                              _provider.loadVendaAtual();
+                              }
+                            });
+                          }
+                        } else {
+                        // Tela de Comanda: sempre mostra modal
+                          final resultado = await SelecionarMesaComandaDialog.show(
+                            context,
+                            comandaIdPreSelecionada: widget.entidade.id,
+                          permiteVendaAvulsa: false,
+                          );
+                          
+                          if (resultado != null && mounted) {
+                            final comandaIdFinal = resultado.comanda?.id ?? widget.entidade.id;
+                            if (comandaIdFinal.isNotEmpty) {
+                              NovoPedidoRestauranteScreen.show(
+                                context,
+                                mesaId: resultado.mesa?.id,
+                                comandaId: comandaIdFinal,
+                              ).then((_) {
+                                if (mounted) {
+                                _provider.loadProdutos(refresh: true);
+                                _provider.loadVendaAtual();
+                                }
+                              });
+                            }
+                          }
+                        }
+                      },
+                    onImprimirParcial: _imprimirParcial,
+                    onPagar: _abrirTelaPagamento,
+                    onFinalizar: _finalizarVenda,
+                    saldoZero: saldoZero,
+                  );
+                },
+                      ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // Método _buildCompactHeader foi extraído para widget separado
+  // Use CompactHeaderWidget em vez disso
+  
+  // Método _buildHistoricoPagamentos foi extraído para widget separado
+  // Use HistoricoPagamentosWidget em vez disso
+
+  // Métodos _buildTotalItem e _buildProdutoCard foram extraídos para widgets separados
+  // Use TotalItemWidget e ProdutoCardWidget em vez disso
+
+  // Método _buildBotoesAcao foi extraído para widget separado
+  // Use BotoesAcaoWidget em vez disso
+
+  /// Verifica se deve mostrar os botões de ação (imprimir e pagar)
+  bool _deveMostrarBotoesAcao() {
+    // Se não é mesa com controle por comanda, usa lógica normal
+    if (widget.entidade.tipo != TipoEntidade.mesa ||
+        _configuracaoRestaurante == null ||
+        !_configuracaoRestaurante!.controlePorComanda) {
+      return _provider.vendaAtual != null && _provider.produtosAgrupados.isNotEmpty;
+    }
+
+    // Se controle é por comanda:
+    // - Se está na visão geral (null), não mostra botões
+    // - Se está em uma comanda específica, mostra botões se tiver produtos (venda pode ser null se ainda não foi criada)
+    if (_provider.abaSelecionada == null) {
+      return false; // Visão geral não permite pagamento
+    }
+
+    final produtos = _provider.getProdutosParaAcao();
+    // Permite mostrar botões se tiver produtos, mesmo sem venda (pode criar venda no pagamento)
+    return produtos.isNotEmpty;
+  }
+
+  /// Retorna os produtos para ação (geral ou da comanda selecionada)
+  List<ProdutoAgrupado> _getProdutosParaAcao() {
+    return _provider.getProdutosParaAcao();
+  }
+
+  /// Retorna a venda para ação (geral ou da comanda selecionada)
+  VendaDto? _getVendaParaAcao() {
+    return _provider.getVendaParaAcao();
+  }
+
+  /// Calcula pagamentos e valor pago baseado no contexto atual (comanda selecionada ou visão geral)
+  _PagamentosCalculados _calcularPagamentos() {
+                            List<PagamentoVendaDto> pagamentos = [];
+    double valorPago = 0.0;
+                            
+    if (_provider.abaSelecionada != null) {
+      // Se há aba selecionada, busca pagamentos da comanda específica
+      final comanda = _provider.comandasDaMesa.firstWhere(
+        (c) => c.comanda.id == _provider.abaSelecionada,
+        orElse: () => _provider.comandasDaMesa.first,
+                              );
+                              if (comanda.comanda.pagamentos.isNotEmpty) {
+                                pagamentos = comanda.comanda.pagamentos;
+                              } else if (comanda.venda?.pagamentos.isNotEmpty == true) {
+                                pagamentos = comanda.venda!.pagamentos;
+                              }
+      // Calcula valor pago da comanda específica
+                              valorPago = pagamentos
+                                  .where((p) => p.status == 2 && !p.isCancelado) // StatusPagamento.Confirmado = 2
+                                  .fold(0.0, (sum, p) => sum + p.valor);
+                            } else if (widget.entidade.tipo == TipoEntidade.comanda) {
+      // Se entidade é comanda diretamente, busca da venda
+      final venda = _provider.getVendaParaAcao();
+                              if (venda?.pagamentos.isNotEmpty == true) {
+                                pagamentos = venda!.pagamentos;
+                                valorPago = venda.totalPago;
+                              }
+                            } else {
+      // Visão geral (mesa com múltiplas comandas ou mesa sem controle por comanda)
+      if (_configuracaoRestaurante != null && _configuracaoRestaurante!.controlePorComanda && _provider.comandasDaMesa.isNotEmpty) {
+        // Se controle é por comanda, soma pagamentos de todas as comandas
+        for (final comandaData in _provider.comandasDaMesa) {
+                                  List<PagamentoVendaDto> pagamentosComanda = [];
+                                  if (comandaData.comanda.pagamentos.isNotEmpty) {
+                                    pagamentosComanda = comandaData.comanda.pagamentos;
+                                  } else if (comandaData.venda?.pagamentos.isNotEmpty == true) {
+                                    pagamentosComanda = comandaData.venda!.pagamentos;
+                                  }
+                                  pagamentos.addAll(pagamentosComanda);
+                                }
+        // Calcula valor pago total de todas as comandas
+                                valorPago = pagamentos
+                                    .where((p) => p.status == 2 && !p.isCancelado) // StatusPagamento.Confirmado = 2
+                                    .fold(0.0, (sum, p) => sum + p.valor);
+      } else {
+        // Mesa sem controle por comanda, usa venda da mesa
+        final venda = _provider.getVendaParaAcao();
+        if (venda != null) {
+                                if (venda.pagamentos.isNotEmpty) {
+                                  pagamentos = venda.pagamentos;
+                                }
+                                valorPago = venda.totalPago;
+                              }
+                            }
+    }
+    
+    return _PagamentosCalculados(
+      pagamentos: pagamentos,
+      valorPago: valorPago,
+    );
+  }
+
+  /// Busca venda aberta quando necessário e atualiza o estado apropriado
+  /// Retorna a venda encontrada ou null se não encontrada
+  Future<VendaDto?> _buscarVendaAberta() async {
+    return await _provider.buscarVendaAberta();
+  }
+
+  Future<void> _imprimirParcial() async {
+    if (_provider.vendaAtual == null) {
+      AppToast.showError(context, 'Nenhuma venda encontrada');
+      return;
+    }
+
+    try {
+      final printService = await PrintService.getInstance();
+      
+      // Cria PrintData para parcial de venda
+      final printData = PrintData(
+        header: PrintHeader(
+          title: 'PARCIAL DE VENDA',
+          subtitle: widget.entidade.tipo == TipoEntidade.mesa 
+              ? 'Mesa ${widget.entidade.numero}'
+              : 'Comanda ${widget.entidade.numero}',
+          dateTime: DateTime.now(),
+        ),
+        entityInfo: PrintEntityInfo(
+          mesaNome: widget.entidade.tipo == TipoEntidade.mesa ? widget.entidade.numero : null,
+          comandaCodigo: widget.entidade.tipo == TipoEntidade.comanda ? widget.entidade.numero : null,
+          clienteNome: _provider.vendaAtual!.clienteNome,
+        ),
+        items: _provider.produtosAgrupados.map((produto) => PrintItem(
+          produtoNome: produto.produtoNome,
+          produtoVariacaoNome: produto.produtoVariacaoNome,
+          quantidade: produto.quantidadeTotal.toDouble(),
+          precoUnitario: produto.precoUnitario,
+          valorTotal: produto.precoTotal,
+          componentesRemovidos: [],
+        )).toList(),
+        totals: PrintTotals(
+          subtotal: _provider.vendaAtual!.subtotal,
+          descontoTotal: _provider.vendaAtual!.descontoTotal,
+          acrescimoTotal: _provider.vendaAtual!.acrescimoTotal,
+          impostosTotal: _provider.vendaAtual!.impostosTotal,
+          valorTotal: _provider.vendaAtual!.valorTotal,
+        ),
+        footer: PrintFooter(
+          message: 'Total pago: R\$ ${_provider.vendaAtual!.totalPago.toStringAsFixed(2)}\n'
+                    'Saldo restante: R\$ ${_provider.vendaAtual!.saldoRestante.toStringAsFixed(2)}',
+        ),
+      );
+
+      final result = await printService.printDocument(
+        documentType: DocumentType.parcialVenda,
+        data: printData,
+      );
+
+      if (result.success) {
+        AppToast.showSuccess(context, 'Parcial impresso com sucesso!');
+      } else {
+        AppToast.showError(context, result.errorMessage ?? 'Erro ao imprimir parcial');
+      }
+    } catch (e) {
+      AppToast.showError(context, 'Erro ao imprimir parcial: $e');
+    }
+  }
+
+  Future<void> _abrirTelaPagamento() async {
+    var venda = _getVendaParaAcao();
+    final produtos = _getProdutosParaAcao();
+
+    // Se venda é null, tenta buscar venda aberta diretamente usando método auxiliar
+    if (venda == null) {
+      debugPrint('⚠️ Venda não encontrada localmente, buscando venda aberta diretamente...');
+      venda = await _buscarVendaAberta();
+    }
+
+    if (venda == null) {
+      AppToast.showError(context, 'Nenhuma venda encontrada');
+      return;
+    }
+
+    if (produtos.isEmpty) {
+      AppToast.showError(context, 'Nenhum produto disponível para pagamento');
+      return;
+    }
+
+    // Validação: se controle é por comanda e está na visão geral, bloqueia
+    if (widget.entidade.tipo == TipoEntidade.mesa && 
+        _configuracaoRestaurante != null && 
+        _configuracaoRestaurante!.controlePorComanda &&
+        _provider.abaSelecionada == null) {
+      AppToast.showError(
+        context, 
+        'Selecione uma comanda específica para realizar o pagamento.'
+      );
+      return;
+    }
+
+    final result = await PagamentoRestauranteScreen.show(
+      context,
+      venda: venda,
+      produtosAgrupados: produtos,
+      // Callback removido - o provider já reage ao evento pagamentoProcessado
+      // e atualiza localmente sem ir no servidor
+      onPaymentSuccess: () {
+        // Não precisa fazer nada - provider já reage ao evento
+      },
+    );
+
+    // Callback após pagamento removido - o provider já reage aos eventos
+    // (pagamentoProcessado e vendaFinalizada) e atualiza localmente
+    // Se a venda foi finalizada, marcarVendaFinalizada() já foi chamado
+    // e loadProdutos() não vai no servidor mesmo se for chamado
+    if (result == true) {
+      // Não precisa recarregar - provider já reage aos eventos
+      // Se venda foi finalizada, já foi marcado como finalizada acima
+    }
+  }
+
+  /// Finaliza a venda (conclui e emite nota fiscal se necessário)
+  Future<void> _finalizarVenda() async {
+    var venda = _getVendaParaAcao();
+    final produtos = _getProdutosParaAcao();
+
+    // Se venda é null, tenta buscar venda aberta diretamente usando método auxiliar
+    if (venda == null) {
+      debugPrint('⚠️ Venda não encontrada localmente, buscando venda aberta diretamente...');
+      venda = await _buscarVendaAberta();
+    }
+
+    if (venda == null) {
+      AppToast.showError(context, 'Nenhuma venda encontrada');
+      return;
+    }
+
+    // Validação: se controle é por comanda e está na visão geral, bloqueia
+    if (widget.entidade.tipo == TipoEntidade.mesa && 
+        _configuracaoRestaurante != null && 
+        _configuracaoRestaurante!.controlePorComanda &&
+        _provider.abaSelecionada == null) {
+      AppToast.showError(
+        context, 
+        'Selecione uma comanda específica para finalizar a venda.'
+      );
+      return;
+    }
+
+    // Confirmação antes de finalizar usando AppDialog padrão
+    final confirmar = await AppDialog.showConfirm(
+      context: context,
+      title: 'Finalizar Venda',
+      message: 'Deseja finalizar esta venda? A nota fiscal será emitida automaticamente se necessário.',
+      confirmText: 'Finalizar',
+      cancelText: 'Cancelar',
+      icon: Icons.check_circle_outline,
+      iconColor: AppTheme.primaryColor,
+      confirmColor: AppTheme.primaryColor,
+    );
+
+    if (confirmar != true) return;
+
+    // Mostra loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final response = await _servicesProvider.vendaService.concluirVenda(venda!.id);
+      
+      if (!mounted) return;
+      Navigator.of(context).pop(); // Fecha loading
+
+      if (response.success && response.data != null) {
+        AppToast.showSuccess(context, response.message ?? 'Venda finalizada com sucesso!');
+        
+        // Determina comandaId da venda sendo finalizada (para finalização parcial)
+        // Sempre usa o comandaId da venda, se houver
+        final comandaIdParaFinalizacao = venda!.comandaId;
+        
+        // Determina mesaId para os eventos
+        final mesaIdParaEvento = widget.entidade.tipo == TipoEntidade.mesa 
+            ? widget.entidade.id 
+            : venda.mesaId;
+        
+        debugPrint('📋 [DetalhesProdutosMesaScreen] Finalizando venda:');
+        debugPrint('   vendaId: ${venda.id}');
+        debugPrint('   comandaId: $comandaIdParaFinalizacao');
+        debugPrint('   mesaId: $mesaIdParaEvento');
+        debugPrint('   entidade.tipo: ${widget.entidade.tipo}');
+        debugPrint('   entidade.id: ${widget.entidade.id}');
+        
+        // Marca venda como finalizada de forma SÍNCRONA antes de disparar evento
+        // Se tem comandaId, remove apenas aquela comanda. Se não, limpa tudo.
+        // O método marcarVendaFinalizada() já verifica se pode liberar a mesa e dispara mesaLiberada internamente
+        _provider.marcarVendaFinalizada(
+          comandaId: comandaIdParaFinalizacao,
+          mesaId: mesaIdParaEvento,
+        );
+        
+        // Dispara evento de venda finalizada (para outros providers/listeners)
+        // O provider já limpou tudo localmente acima (sem ir no servidor)
+        if (mesaIdParaEvento != null) {
+          debugPrint('📢 [DetalhesProdutosMesaScreen] Disparando evento vendaFinalizada');
+          AppEventBus.instance.dispararVendaFinalizada(
+            vendaId: venda.id,
+            mesaId: mesaIdParaEvento,
+            comandaId: comandaIdParaFinalizacao,
+          );
+        } else {
+          debugPrint('⚠️ [DetalhesProdutosMesaScreen] Não foi possível determinar mesaId, não disparando evento vendaFinalizada');
+        }
+        
+        // NÃO recarrega dados do servidor - o provider já limpou tudo localmente acima
+      } else {
+        AppToast.showError(context, response.message ?? 'Erro ao finalizar venda');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context).pop(); // Fecha loading
+      AppToast.showError(context, 'Erro ao finalizar venda: ${e.toString()}');
+    }
+  }
+
+  /// Conteúdo das abas ou lista de produtos normal
+  Widget _buildConteudoAbas(AdaptiveLayoutProvider adaptive) {
+    // Se não é mesa com controle por comanda, mostra lista normal
+    if (widget.entidade.tipo != TipoEntidade.mesa ||
+        _configuracaoRestaurante == null ||
+        !_configuracaoRestaurante!.controlePorComanda) {
+      return Container(
+        color: Colors.white,
+        child: _buildListaProdutos(adaptive),
+      );
+    }
+
+    // Para mesa com controle por comanda, mostra seletor de visualização integrado
+    // NOTA: Comandas são carregadas automaticamente dentro de _loadProdutos() quando controle é por comanda
+    // Não precisa chamar _loadComandasDaMesa() aqui para evitar chamada duplicada
+
+    return Container(
+      color: Colors.white,
+      child: Column(
+      children: [
+        // Seletor de visualização (tabs integradas)
+        _buildSeletorVisualizacao(adaptive),
+        // Conteúdo da visualização selecionada
+        Expanded(
+            child: _provider.abaSelecionada == null
+                ? _buildListaProdutos(adaptive) // Visão Geral: produtos agrupados
+                : _buildListaProdutosPorComanda(adaptive, _provider.abaSelecionada!), // Comanda específica
+        ),
+      ],
+      ),
+    );
+  }
+
+  /// Seletor de visualização integrado (substitui tabs do cabeçalho)
+  Widget _buildSeletorVisualizacao(AdaptiveLayoutProvider adaptive) {
+    return TabsScrollableWidget(
+      adaptive: adaptive,
+      tabs: [
+        TabData(
+          comandaId: null,
+          label: 'Visão Geral',
+          icon: Icons.view_list,
+        ),
+        ..._provider.comandasDaMesa.map((comandaData) {
+          final comanda = comandaData.comanda;
+          return TabData(
+            comandaId: comanda.id,
+            label: 'Comanda ${comanda.numero}',
+            icon: Icons.receipt_long,
+          );
+        }),
+      ],
+      selectedTab: _provider.abaSelecionada,
+      onTabSelected: (comandaId) {
+        _provider.setAbaSelecionada(comandaId);
+      },
+      buildTab: (tab) => _buildOpcaoVisualizacao(
+        adaptive,
+        comandaId: tab.comandaId,
+        label: tab.label,
+        icon: tab.icon,
+      ),
+    );
+  }
+
+  Widget _buildOpcaoVisualizacao(
+    AdaptiveLayoutProvider adaptive, {
+    required String? comandaId,
+    required String label,
+    required IconData icon,
+  }) {
+    final isSelected = _provider.abaSelecionada == comandaId;
+
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: adaptive.isMobile ? 12 : 16,
+        vertical: adaptive.isMobile ? 10 : 12,
+      ),
+      decoration: BoxDecoration(
+        color: isSelected ? Colors.white : Colors.transparent,
+        borderRadius: BorderRadius.circular(adaptive.isMobile ? 10 : 12),
+        boxShadow: isSelected
+            ? [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ]
+            : null,
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            icon,
+            size: adaptive.isMobile ? 16 : 18,
+            color: isSelected ? AppTheme.primaryColor : AppTheme.textSecondary,
+          ),
+          SizedBox(width: adaptive.isMobile ? 6 : 8),
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: adaptive.isMobile ? 13 : 14,
+              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+              color: isSelected ? AppTheme.primaryColor : AppTheme.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Lista de produtos (visão geral)
+  Widget _buildListaProdutos(AdaptiveLayoutProvider adaptive) {
+    return _provider.errorMessage != null
+        ? Container(
+            color: Colors.white,
+            child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(
+                  Icons.error_outline,
+                  size: 64,
+                  color: AppTheme.errorColor,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                    _provider.errorMessage!,
+                  style: GoogleFonts.inter(
+                    fontSize: 16,
+                    color: AppTheme.textSecondary,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                    onPressed: () => _provider.loadProdutos(refresh: true),
+                  child: const Text('Tentar novamente'),
+                ),
+              ],
+            ),
+            ),
+          )
+        : _provider.isLoading
+            ? Container(
+                color: Colors.white,
+                child: const Center(child: CircularProgressIndicator()),
+              )
+            : _provider.produtosAgrupados.isEmpty
+                ? Container(
+                    color: Colors.white,
+                    child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.shopping_cart_outlined,
+                          size: 64,
+                          color: Colors.grey.shade400,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Nenhum produto encontrado',
+                          style: GoogleFonts.inter(
+                            fontSize: 16,
+                            color: AppTheme.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    ),
+                  )
+                : Container(
+                    color: Colors.white,
+                    child: RefreshIndicator(
+                      onRefresh: () => _provider.loadProdutos(refresh: true),
+                    child: ListView.builder(
+                      padding: EdgeInsets.fromLTRB(
+                        adaptive.isMobile ? 16 : 20,
+                        8,
+                        adaptive.isMobile ? 16 : 20,
+                        8,
+                      ),
+                        itemCount: _provider.produtosAgrupados.length,
+                      itemBuilder: (context, index) {
+                          return ProdutoCardWidget(
+                            produto: _provider.produtosAgrupados[index],
+                            adaptive: adaptive,
+                          );
+                      },
+                      ),
+                    ),
+                  );
+  }
+
+  /// Lista de produtos filtrada por comanda específica
+  Widget _buildListaProdutosPorComanda(AdaptiveLayoutProvider adaptive, String comandaId) {
+    // Busca os produtos da comanda específica
+    final produtosComanda = _provider.produtosPorComanda[comandaId] ?? [];
+    
+    if (produtosComanda.isEmpty) {
+      return Container(
+        color: Colors.white,
+        child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.shopping_cart_outlined,
+              size: 64,
+              color: Colors.grey.shade400,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Nenhum produto encontrado nesta comanda',
+              style: GoogleFonts.inter(
+                fontSize: 16,
+                color: AppTheme.textSecondary,
+              ),
+            ),
+          ],
+          ),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: () => _provider.loadProdutos(refresh: true),
+      child: ListView.builder(
+        padding: EdgeInsets.fromLTRB(
+          adaptive.isMobile ? 16 : 20,
+          8,
+          adaptive.isMobile ? 16 : 20,
+          8,
+        ),
+        itemCount: produtosComanda.length,
+        itemBuilder: (context, index) {
+          return ProdutoCardWidget(
+            produto: produtosComanda[index],
+            adaptive: adaptive,
+          );
+        },
+      ),
+    );
+  }
+
+  /// Lista de comandas da mesa
+  Widget _buildListaComandas(AdaptiveLayoutProvider adaptive) {
+    if (_provider.carregandoComandas) {
+      return Container(
+        color: Colors.white,
+        child: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_provider.comandasDaMesa.isEmpty) {
+      return Container(
+        color: Colors.white,
+        child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.receipt_long_outlined,
+              size: 64,
+              color: Colors.grey.shade400,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Nenhuma comanda encontrada nesta mesa',
+              style: GoogleFonts.inter(
+                fontSize: 16,
+                color: AppTheme.textSecondary,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+                onPressed: () => _provider.loadProdutos(refresh: true),
+              icon: const Icon(Icons.refresh),
+              label: const Text('Atualizar'),
+            ),
+          ],
+          ),
+        ),
+      );
+    }
+
+    // Lista de comandas
+    return Container(
+      color: Colors.white,
+      child: RefreshIndicator(
+        onRefresh: () => _provider.loadProdutos(refresh: true),
+      child: ListView.builder(
+        padding: EdgeInsets.fromLTRB(
+          adaptive.isMobile ? 16 : 20,
+          0,
+          adaptive.isMobile ? 16 : 20,
+          8,
+        ),
+          itemCount: _provider.comandasDaMesa.length,
+        itemBuilder: (context, index) {
+            final comandaData = _provider.comandasDaMesa[index];
+            return ComandaCardWidget(
+              comandaData: comandaData,
+              adaptive: adaptive,
+              isExpanded: _provider.produtosPorComanda.containsKey(comandaData.comanda.id),
+              onTap: () => _provider.setAbaSelecionada(comandaData.comanda.id),
+              onPagarComanda: comandaData.venda != null && comandaData.produtos.isNotEmpty
+                  ? () => _abrirPagamentoComanda(
+                        comandaData.comanda,
+                        comandaData.produtos,
+                        comandaData.venda!,
+                      )
+                  : null,
+                        );
+                      },
+                    ),
+      ),
+    );
+  }
+
+  // Método _buildComandaCard foi extraído para widget separado
+  // Use ComandaCardWidget em vez disso
+
+  /// Abre tela de pagamento para uma comanda específica
+  Future<void> _abrirPagamentoComanda(
+    ComandaListItemDto comanda,
+    List<ProdutoAgrupado> produtos,
+    VendaDto venda,
+  ) async {
+    final result = await PagamentoRestauranteScreen.show(
+      context,
+      venda: venda,
+      produtosAgrupados: produtos,
+      onPaymentSuccess: () {
+        _provider.loadVendaAtual();
+        _provider.loadProdutos(refresh: true);
+        // Comandas são recarregadas automaticamente dentro de _loadProdutos() quando controle é por comanda
+      },
+    );
+
+    if (result == true && mounted) {
+      // Recarrega dados
+      _provider.loadVendaAtual();
+      _provider.loadProdutos(refresh: true);
+      // Comandas são recarregadas automaticamente dentro de loadProdutos() quando controle é por comanda
+    }
+  }
+}

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Splash screen com logo MX -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Background com gradiente -->
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:type="linear"
+                android:angle="135"
+                android:startColor="#6366F1"
+                android:centerColor="#8B5CF6"
+                android:endColor="#EC4899" />
+        </shape>
+    </item>
+    
+    <!-- Logo MX centralizado -->
+    <item
+        android:width="120dp"
+        android:height="120dp"
+        android:gravity="center"
+        android:drawable="@drawable/mx_logo_splash" />
+</layer-list>

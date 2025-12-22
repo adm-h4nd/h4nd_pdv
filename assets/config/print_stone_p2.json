@@ -1,0 +1,38 @@
+{
+  "documents": {
+    "comandaConferencia": {
+      "defaultOutput": "thermalPrinter",
+      "availableOutputs": ["thermalPrinter", "pdf", "share"],
+      "providerKey": "stone_thermal"
+    },
+    "orcamento": {
+      "defaultOutput": "thermalPrinter",
+      "availableOutputs": ["thermalPrinter", "pdf"],
+      "providerKey": "stone_thermal"
+    },
+    "parcialVenda": {
+      "defaultOutput": "thermalPrinter",
+      "availableOutputs": ["thermalPrinter", "pdf"],
+      "providerKey": "stone_thermal"
+    },
+    "nfce": {
+      "defaultOutput": "thermalPrinter",
+      "availableOutputs": ["thermalPrinter", "pdf"],
+      "providerKey": "stone_thermal"
+    }
+  },
+  "supportedProviders": ["stone_thermal", "stone_p2_deeplink", "pdf"],
+  "defaultProvider": "stone_thermal",
+  "providerSettings": {
+    "stone_thermal": {
+      "model": "P2",
+      "appName": "MX Cloud PDV",
+      "stoneCode": "206192723"
+    },
+    "stone_p2_deeplink": {
+      "model": "P2",
+      "returnScheme": "deeplinkprinter"
+    }
+  }
+}
+

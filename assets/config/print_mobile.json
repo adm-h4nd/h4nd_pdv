@@ -1,0 +1,23 @@
+{
+  "documents": {
+    "comandaConferencia": {
+      "defaultOutput": "pdf",
+      "availableOutputs": ["pdf", "share", "preview"]
+    },
+    "orcamento": {
+      "defaultOutput": "pdf",
+      "availableOutputs": ["pdf", "share"]
+    },
+    "parcialVenda": {
+      "defaultOutput": "pdf",
+      "availableOutputs": ["pdf", "share"]
+    },
+    "nfce": {
+      "defaultOutput": "pdf",
+      "availableOutputs": ["pdf", "share"]
+    }
+  },
+  "supportedProviders": ["pdf"],
+  "defaultProvider": "pdf"
+}
+
