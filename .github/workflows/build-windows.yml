@@ -1,0 +1,107 @@
+name: Build Windows
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+    inputs:
+      flavor:
+        description: 'Flavor to build (mobile ou stoneP2)'
+        required: false
+        default: 'mobile'
+        type: choice
+        options:
+          - mobile
+          - stoneP2
+
+jobs:
+  build-windows:
+    name: Build Windows App
+    runs-on: windows-latest
+    env:
+      FLAVOR: ${{ github.event.inputs.flavor || 'mobile' }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+          cache: true
+
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Create Windows platform files (if needed)
+        run: flutter create --platforms=windows .
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Verify Flutter setup
+        run: flutter doctor -v
+
+      - name: Build Windows (Release)
+        run: |
+          $flavor = "$env:FLAVOR"
+          if ([string]::IsNullOrWhiteSpace($flavor) -or $flavor -eq '') {
+            $flavor = "mobile"
+          }
+          Write-Host "Building with flavor: $flavor"
+          flutter build windows --release --flavor $flavor
+        continue-on-error: false
+
+      - name: Create ZIP artifact
+        run: |
+          $versionLine = Get-Content pubspec.yaml | Select-String 'version:'
+          $version = ($versionLine.Line -split ':')[1].Trim()
+          $flavor = "$env:FLAVOR"
+          if ([string]::IsNullOrWhiteSpace($flavor) -or $flavor -eq '') {
+            $flavor = "mobile"
+          }
+          $zipName = "mx_cloud_pdv_windows_${flavor}_${version}.zip"
+          
+          Write-Host "Creating ZIP: $zipName"
+          Compress-Archive -Path "build\windows\x64\runner\Release\*" -DestinationPath $zipName -Force
+          
+          Write-Host "ZIP_NAME=$zipName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          
+          if (Test-Path $zipName) {
+            Write-Host "ZIP created successfully: $zipName"
+            Get-Item $zipName | Select-Object Name, Length
+          } else {
+            Write-Host "ERROR: ZIP file was not created!"
+            exit 1
+          }
+
+      - name: Upload Windows build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build-${{ env.FLAVOR }}
+          path: |
+            build/windows/x64/runner/Release/**
+            *.zip
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Create Release (if tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            *.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
