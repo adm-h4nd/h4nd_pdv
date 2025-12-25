@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'dart:io' show Platform;
 import 'package:provider/provider.dart';
 import '../../../presentation/providers/auth_provider.dart';
 import '../../../presentation/providers/services_provider.dart';
@@ -187,6 +188,108 @@ class _HomeNavigationState extends State<HomeNavigation> {
     }
   }
 
+  /// Constrói o conteúdo da barra de navegação inferior
+  /// Desktop (Windows/Linux/Mac): não usa SafeArea
+  /// Mobile: usa SafeArea para evitar sobreposição com barras do sistema
+  Widget _buildBottomNavigationContent(
+    BuildContext context,
+    List<NavigationItem> navigationItems,
+  ) {
+    final isDesktop = kIsWeb || 
+                      (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS));
+    
+    final content = Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: 8,
+        vertical: isDesktop ? 12 : 6,
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: navigationItems.asMap().entries.map((entry) {
+          final index = entry.key;
+          final item = entry.value;
+          final isActive = _currentIndex == index;
+
+          return Expanded(
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () {
+                  setState(() {
+                    _currentIndex = index;
+                  });
+                },
+                borderRadius: BorderRadius.circular(16),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOutCubic,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isActive
+                        ? Theme.of(context)
+                            .colorScheme
+                            .primary
+                            .withOpacity(0.08)
+                        : null,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // Ícone simples
+                      Icon(
+                        item.icon,
+                        color: isActive
+                            ? Theme.of(context).colorScheme.primary
+                            : Colors.grey.shade500,
+                        size: isActive ? 26 : 24,
+                      ),
+                      const SizedBox(height: 4),
+                      AnimatedDefaultTextStyle(
+                        duration: const Duration(milliseconds: 300),
+                        style: TextStyle(
+                          fontSize: isActive ? 12 : 11,
+                          color: isActive
+                              ? Theme.of(context).colorScheme.primary
+                              : Colors.grey.shade600,
+                          fontWeight: isActive
+                              ? FontWeight.w600
+                              : FontWeight.w500,
+                          height: 1.2,
+                        ),
+                        child: Text(
+                          item.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+    
+    // Desktop: retorna conteúdo direto (sem SafeArea)
+    if (isDesktop) {
+      return content;
+    }
+    
+    // Mobile: envolve com SafeArea
+    return SafeArea(
+      top: false,
+      child: content,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // Se ainda está carregando, mostra loading
@@ -232,85 +335,7 @@ class _HomeNavigationState extends State<HomeNavigation> {
                 ),
               ],
             ),
-            child: SafeArea(  
-              top: false,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: navigationItems.asMap().entries.map((entry) {
-                    final index = entry.key;
-                    final item = entry.value;
-                    final isActive = _currentIndex == index;
-
-                    return Expanded(
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: () {
-                            setState(() {
-                              _currentIndex = index;
-                            });
-                          },
-                          borderRadius: BorderRadius.circular(16),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 300),
-                            curve: Curves.easeOutCubic,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 8,
-                            ),
-                            decoration: BoxDecoration(
-                              color: isActive
-                                  ? Theme.of(context)
-                                      .colorScheme
-                                      .primary
-                                      .withOpacity(0.08)
-                                  : null,
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                // Ícone simples
-                                Icon(
-                                  item.icon,
-                                  color: isActive
-                                      ? Theme.of(context).colorScheme.primary
-                                      : Colors.grey.shade500,
-                                  size: isActive ? 26 : 24,
-                                ),
-                                const SizedBox(height: 4),
-                                AnimatedDefaultTextStyle(
-                                  duration: const Duration(milliseconds: 300),
-                                  style: TextStyle(
-                                    fontSize: isActive ? 12 : 11,
-                                    color: isActive
-                                        ? Theme.of(context).colorScheme.primary
-                                        : Colors.grey.shade600,
-                                    fontWeight: isActive
-                                        ? FontWeight.w600
-                                        : FontWeight.w500,
-                                    height: 1.2,
-                                  ),
-                                  child: Text(
-                                    item.label,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-            ),
+            child: _buildBottomNavigationContent(context, navigationItems),
           ),
         );
       },
