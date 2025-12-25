@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import '../../../presentation/providers/auth_provider.dart';
 import '../../../presentation/providers/services_provider.dart';
@@ -188,22 +187,14 @@ class _HomeNavigationState extends State<HomeNavigation> {
   }
 
   /// Constrói o conteúdo da barra de navegação inferior
-  /// Desktop (Windows/Linux/Mac): não usa SafeArea
-  /// Mobile: usa SafeArea para evitar sobreposição com barras do sistema
   Widget _buildBottomNavigationContent(
     BuildContext context,
     List<NavigationItem> navigationItems,
   ) {
-    // Detecta desktop usando defaultTargetPlatform (funciona em todas as plataformas)
-    final isDesktop = kIsWeb || 
-                      (defaultTargetPlatform == TargetPlatform.windows ||
-                       defaultTargetPlatform == TargetPlatform.linux ||
-                       defaultTargetPlatform == TargetPlatform.macOS);
-    
     final content = Container(
-      padding: EdgeInsets.symmetric(
+      padding: const EdgeInsets.symmetric(
         horizontal: 8,
-        vertical: isDesktop ? 12 : 6,
+        vertical: 6,
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -280,12 +271,7 @@ class _HomeNavigationState extends State<HomeNavigation> {
       ),
     );
     
-    // Desktop: retorna conteúdo direto (sem SafeArea)
-    if (isDesktop) {
-      return content;
-    }
-    
-    // Mobile: envolve com SafeArea
+    // Sempre usa SafeArea para evitar sobreposição com barras do sistema
     return SafeArea(
       top: false,
       child: content,

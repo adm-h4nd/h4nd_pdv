@@ -1,6 +1,6 @@
 import 'package:hive/hive.dart';
 
-// part 'configuracao_restaurante_local.g.dart'; // Descomentar após executar build_runner
+part 'configuracao_restaurante_local.g.dart';
 
 /// Modelo local de ConfiguracaoRestaurante para persistência offline
 @HiveType(typeId: 23)

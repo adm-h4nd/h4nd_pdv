@@ -93,12 +93,43 @@
 -dontwarn javax.swing.**
 
 # ============================================================================
-# SDK POS - Classes que referenciam APIs internas do Android
+# CRÍTICO: Preserva MainActivity e ciclo de vida
 # ============================================================================
-# Ignora avisos sobre classes do SDK POS que referenciam APIs internas do Android
-# Estas classes não estão disponíveis publicamente e causam erros no R8
--dontwarn android.os.ServiceManager
--dontwarn android.os.SystemProperties
--dontwarn com.pos.sdk.**
--dontnote com.pos.sdk.**
+# Preserva MainActivity completamente (incluindo anotações)
+-keep class com.example.mx_cloud_pdv.MainActivity {
+    *;
+}
+-keepclassmembers class com.example.mx_cloud_pdv.MainActivity {
+    *;
+}
+
+# Preserva FlutterActivity e seus métodos de ciclo de vida
+-keep class io.flutter.embedding.android.FlutterActivity {
+    *;
+}
+-keepclassmembers class io.flutter.embedding.android.FlutterActivity {
+    *;
+}
+
+# Preserva métodos de ciclo de vida de qualquer Activity
+-keepclassmembers class * extends android.app.Activity {
+    public void onCreate(android.os.Bundle);
+    public void onStart();
+    public void onResume();
+    public void onPause();
+    public void onStop();
+    public void onDestroy();
+}
+
+# Preserva anotações (incluindo @Keep)
+-keepattributes *Annotation*
+-keepattributes Signature
+-keepattributes Exceptions
+-keepattributes InnerClasses
+-keepattributes SourceFile,LineNumberTable
+
+# Preserva classes Hive
+-keep class * extends com.ryanharter.hive.typeadapters.TypeAdapter { *; }
+-keep class * implements com.ryanharter.hive.typeadapters.TypeAdapter { *; }
+-keep @com.ryanharter.hive.typeadapters.TypeAdapter class * { *; }
 

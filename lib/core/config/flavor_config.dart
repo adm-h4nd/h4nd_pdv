@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 
 /// Detecta o flavor atual do build
 class FlavorConfig {
@@ -52,26 +51,6 @@ class FlavorConfig {
       _cachedFlavor = flavorEnv;
       debugPrint('✅ Flavor detectado via --dart-define: $flavorEnv');
       return _cachedFlavor!;
-    }
-    
-    // Tenta detectar pelo applicationId (mais confiável)
-    try {
-      final packageInfo = await PackageInfo.fromPlatform();
-      final applicationId = packageInfo.packageName;
-      debugPrint('📦 ApplicationId detectado: $applicationId');
-      
-      // Detecta flavor pelo applicationId
-      if (applicationId.contains('.stone.p2')) {
-        _cachedFlavor = 'stoneP2';
-        debugPrint('✅ Flavor detectado via applicationId: stoneP2');
-        return _cachedFlavor!;
-      } else if (applicationId.contains('.mobile')) {
-        _cachedFlavor = 'mobile';
-        debugPrint('✅ Flavor detectado via applicationId: mobile');
-        return _cachedFlavor!;
-      }
-    } catch (e) {
-      debugPrint('⚠️ Erro ao detectar flavor via applicationId: $e');
     }
     
     // Fallback: tenta detectar pelo arquivo de config disponível

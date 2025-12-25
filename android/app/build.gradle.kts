@@ -51,24 +51,17 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
-            // Habilita minificação e ProGuard para remover código não utilizado
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
+                getDefaultProguardFile("proguard-android.txt"),
                 "proguard-rules.pro",
-                "proguard-mobile.pro" // Inclui sempre, mas só terá efeito no flavor mobile
+                "proguard-mobile.pro"
             )
         }
         debug {
-            // No debug, também habilita minificação para testar as regras ProGuard
-            isMinifyEnabled = true
+            isMinifyEnabled = false
             isShrinkResources = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro",
-                "proguard-mobile.pro" // Inclui sempre, mas só terá efeito no flavor mobile
-            )
         }
     }
     

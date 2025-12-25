@@ -15,8 +15,6 @@ import 'core/theme/app_theme.dart';
 import 'core/adaptive_layout/adaptive_layout.dart';
 import 'screens/splash/splash_screen.dart';
 import 'presentation/screens/server_config/server_config_screen.dart';
-import 'core/deeplink/deeplink_manager.dart';
-import 'core/deeplink/deeplink_handler.dart';
 import 'core/payment/payment_service.dart';
 import 'core/payment/pagamento_pendente_manager.dart';
 import 'core/payment/pagamento_pendente_service.dart';
@@ -28,106 +26,157 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await initializeApp();
+  
+  // Tratamento de erros global para capturar crashes silenciosos
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    debugPrint('❌ FLUTTER ERROR: ${details.exception}');
+    debugPrint('📚 Stack: ${details.stack}');
+  };
+  
+  // Trata erros assíncronos não capturados
+  PlatformDispatcher.instance.onError = (error, stack) {
+    debugPrint('❌ PLATFORM ERROR: $error');
+    debugPrint('📚 Stack: $stack');
+    return true;
+  };
+  
+  try {
+    await initializeApp();
+  } catch (e, stack) {
+    debugPrint('❌ ERRO FATAL NA INICIALIZAÇÃO: $e');
+    debugPrint('📚 Stack trace completo: $stack');
+    
+    // Tenta mostrar uma tela de erro para não fechar silenciosamente
+    runApp(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Erro ao inicializar o aplicativo',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    e.toString(),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// Função helper para inicializar o app (pode ser chamada novamente após configurar servidor)
 Future<void> initializeApp() async {
-  // Remove a splash screen branca do Flutter
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      systemNavigationBarColor: Colors.transparent,
-    ),
-  );
-  
-  // Inicializa serviços
-  await PreferencesService.init();
-  
-  // Verifica se o servidor está configurado
-  final isServerConfigured = ServerConfigService.isConfigured();
-  
-  // Se não estiver configurado, inicia direto na tela de configuração
-  if (!isServerConfigured) {
-    runApp(
-      MaterialApp(
-        title: 'MX Cloud PDV',
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.lightTheme,
-        darkTheme: AppTheme.darkTheme,
-        themeMode: ThemeMode.light,
-        home: const AdaptiveLayout(
-          child: ServerConfigScreen(allowBack: false),
-        ),
+  try {
+    debugPrint('🚀 [INIT] Iniciando initializeApp...');
+    
+    // Remove a splash screen branca do Flutter
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        systemNavigationBarColor: Colors.transparent,
       ),
     );
-    return;
+    debugPrint('✅ [INIT] SystemChrome configurado');
+    
+    // Inicializa serviços
+    debugPrint('📦 [INIT] Inicializando PreferencesService...');
+    await PreferencesService.init();
+    debugPrint('✅ [INIT] PreferencesService inicializado');
+    
+    // Verifica se o servidor está configurado
+    debugPrint('🔍 [INIT] Verificando configuração do servidor...');
+    final isServerConfigured = ServerConfigService.isConfigured();
+    debugPrint('📋 [INIT] Servidor configurado: $isServerConfigured');
+  
+    // Se não estiver configurado, inicia direto na tela de configuração
+    if (!isServerConfigured) {
+      debugPrint('⚙️ [INIT] Servidor não configurado, abrindo tela de configuração...');
+      runApp(
+        MaterialApp(
+          title: 'MX Cloud PDV',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.lightTheme,
+          darkTheme: AppTheme.darkTheme,
+          themeMode: ThemeMode.light,
+          home: const AdaptiveLayout(
+            child: ServerConfigScreen(allowBack: false),
+          ),
+        ),
+      );
+      debugPrint('✅ [INIT] App configurado (tela de configuração)');
+      return;
+    }
+    
+    // Inicializa Hive (banco de dados local)
+    debugPrint('💾 [INIT] Inicializando AppDatabase (Hive)...');
+    await AppDatabase.init();
+    debugPrint('✅ [INIT] AppDatabase inicializado');
+  
+    // Cria instâncias dos serviços primeiro (para ter acesso ao ApiClient)
+    debugPrint('🔧 [INIT] Criando serviços...');
+    final config = Environment.config;
+    final secureStorage = SecureStorageService();
+    final authService = AuthService(
+      config: config,
+      secureStorage: secureStorage,
+    );
+    debugPrint('✅ [INIT] AuthService criado');
+    
+    // Cria ServicesProvider temporário para obter serviços
+    debugPrint('🏭 [INIT] Criando ServicesProvider...');
+    final tempServicesProvider = ServicesProvider(authService);
+    debugPrint('✅ [INIT] ServicesProvider criado');
+    
+    // Configura PaymentService com VendaService (para callbacks de deeplink)
+    debugPrint('💳 [INIT] Configurando PaymentService...');
+    await PaymentService.getInstance();
+    PaymentService.setVendaService(tempServicesProvider.vendaService);
+    debugPrint('✅ [INIT] PaymentService configurado');
+    
+    // Configura PagamentoPendenteManager
+    debugPrint('💰 [INIT] Configurando PagamentoPendenteManager...');
+    final pagamentoPendenteRepo = PagamentoPendenteRepository();
+    final pagamentoPendenteService = PagamentoPendenteService(
+      repository: pagamentoPendenteRepo,
+      vendaService: tempServicesProvider.vendaService,
+    );
+    
+    PagamentoPendenteManager.instance.initialize(
+      service: pagamentoPendenteService,
+      navigatorKey: navigatorKey,
+      vendaService: tempServicesProvider.vendaService,
+      mesaService: tempServicesProvider.mesaService,
+      comandaService: tempServicesProvider.comandaService,
+    );
+    debugPrint('✅ [INIT] PagamentoPendenteManager inicializado');
+    
+    debugPrint('🎨 [INIT] Iniciando app principal...');
+    runApp(
+      MXCloudPDVApp(
+        authService: authService,
+      ),
+    );
+    debugPrint('✅ [INIT] App iniciado com sucesso!');
+  } catch (e, stack) {
+    debugPrint('❌ [INIT] ERRO em initializeApp: $e');
+    debugPrint('📚 [INIT] Stack trace: $stack');
+    rethrow; // Re-lança para ser capturado no main()
   }
-  
-  // Inicializa Hive (banco de dados local)
-  await AppDatabase.init();
-  
-  // Cria instâncias dos serviços primeiro (para ter acesso ao ApiClient)
-  final config = Environment.config;
-  final secureStorage = SecureStorageService();
-  final authService = AuthService(
-    config: config,
-    secureStorage: secureStorage,
-  );
-  
-  // Cria ServicesProvider temporário para obter serviços
-  final tempServicesProvider = ServicesProvider(authService);
-  
-  // Configura PaymentService com VendaService (para callbacks de deeplink)
-  await PaymentService.getInstance();
-  PaymentService.setVendaService(tempServicesProvider.vendaService);
-  
-  // Configura PagamentoPendenteManager
-  final pagamentoPendenteRepo = PagamentoPendenteRepository();
-  final pagamentoPendenteService = PagamentoPendenteService(
-    repository: pagamentoPendenteRepo,
-    vendaService: tempServicesProvider.vendaService,
-  );
-  
-  PagamentoPendenteManager.instance.initialize(
-    service: pagamentoPendenteService,
-    navigatorKey: navigatorKey,
-    vendaService: tempServicesProvider.vendaService,
-    mesaService: tempServicesProvider.mesaService,
-    comandaService: tempServicesProvider.comandaService,
-  );
-  
-  // Inicializa DeepLinkManager (escuta callbacks de pagamento/impressão)
-  // O callback de pagamento salva localmente e abre dialog bloqueante
-  await DeepLinkManager.instance.initialize(
-    onPaymentResult: (result) async {
-      debugPrint('💳 [DeepLink] Resultado de pagamento recebido: ${result.success ? "Sucesso" : "Erro"}');
-      
-      if (result.success && result.orderId != null && result.amount != null) {
-        // Processa pagamento aprovado: salva localmente e abre dialog bloqueante
-        await PagamentoPendenteManager.instance.processarPagamentoAprovado(
-          vendaId: result.orderId!, // Já é o GUID original (recuperado do mapeamento)
-          valor: result.amount!,
-          paymentType: result.paymentType,
-          brand: result.brand,
-          installments: result.installments,
-          transactionId: result.transactionId,
-        );
-      } else {
-        debugPrint('⚠️ [DeepLink] Pagamento não aprovado ou dados incompletos');
-      }
-    },
-    onPrintResult: (result) {
-      debugPrint('🖨️ [DeepLink] Resultado de impressão recebido: ${result.success ? "Sucesso" : "Erro"}');
-      // Impressão não precisa registrar no backend, apenas log
-    },
-  );
-  
-  runApp(
-    MXCloudPDVApp(
-      authService: authService,
-    ),
-  );
 }
 
 class MXCloudPDVApp extends StatelessWidget {

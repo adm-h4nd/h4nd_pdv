@@ -23,6 +23,7 @@ import 'widgets/mesa_insights_panel.dart';
 import 'widgets/mesa_alerta_badge.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../widgets/h4nd_loading.dart';
+import '../../presentation/widgets/common/home_navigation.dart';
 
 /// Classe auxiliar para armazenar tamanhos do card
 class _MesaCardSizes {
@@ -201,6 +202,18 @@ class _MesasScreenState extends State<MesasScreen> {
     _provider.filterMesas('');
   }
   
+  /// Navega para a tela home (apenas Windows/desktop)
+  void _navegarParaHome() {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (context) => const AdaptiveLayout(
+          child: HomeNavigation(),
+        ),
+      ),
+      (route) => route.isFirst, // Mantém apenas a primeira rota (home)
+    );
+  }
+  
   @override
   void dispose() {
     _provider.dispose();
@@ -314,12 +327,6 @@ class _MesasScreenState extends State<MesasScreen> {
       ),
       child: Row(
         children: [
-          // Botão Home (apenas desktop/Windows) - para navegar de volta
-          if (!adaptive.isMobile) ...[
-            _buildHomeButton(adaptive),
-            const SizedBox(width: 8),
-          ],
-          
           // Botão de busca - compacto
           _buildToolButtonCompact(
             adaptive,
@@ -404,6 +411,20 @@ class _MesasScreenState extends State<MesasScreen> {
             const SizedBox(width: 8),
           ],
           
+          // Botão Home - apenas para Windows/desktop
+          if (defaultTargetPlatform == TargetPlatform.windows ||
+              defaultTargetPlatform == TargetPlatform.linux ||
+              defaultTargetPlatform == TargetPlatform.macOS) ...[
+            _buildToolButtonCompact(
+              adaptive,
+              icon: Icons.home_rounded,
+              onTap: _navegarParaHome,
+              isPrimary: false,
+              tooltip: 'Home',
+            ),
+            const SizedBox(width: 8),
+          ],
+          
           // Botão de atualizar - compacto
           _buildToolButtonCompact(
             adaptive,
@@ -414,23 +435,6 @@ class _MesasScreenState extends State<MesasScreen> {
           ),
         ],
       ),
-    );
-  }
-  
-  /// Botão Home para desktop/Windows (navega para home)
-  Widget _buildHomeButton(AdaptiveLayoutProvider adaptive) {
-    return _buildToolButtonCompact(
-      adaptive,
-      icon: Icons.home_rounded,
-      onTap: () {
-        // Navega para home (pop até chegar na primeira rota que é a HomeNavigation)
-        Navigator.of(context).popUntil((route) {
-          // Para quando encontrar a HomeNavigation ou chegar na primeira rota
-          return route.isFirst || route.settings.name == '/';
-        });
-      },
-      isPrimary: false,
-      tooltip: 'Home',
     );
   }
   

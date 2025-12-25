@@ -97,11 +97,10 @@ class AppDatabase {
         Hive.registerAdapter(ComandaLocalAdapter());
         debugPrint('✅ Adapter ComandaLocal (typeId: 22) registrado');
       }
-      // ConfiguracaoRestauranteLocalAdapter será registrado após executar build_runner
-      // if (!Hive.isAdapterRegistered(23)) {
-      //   Hive.registerAdapter(ConfiguracaoRestauranteLocalAdapter());
-      //   debugPrint('✅ Adapter ConfiguracaoRestauranteLocal (typeId: 23) registrado');
-      // }
+      if (!Hive.isAdapterRegistered(23)) {
+        Hive.registerAdapter(ConfiguracaoRestauranteLocalAdapter());
+        debugPrint('✅ Adapter ConfiguracaoRestauranteLocal (typeId: 23) registrado');
+      }
     } catch (e) {
       // Se houver erro ao registrar (ex: já registrado), tentar registrar novamente
       debugPrint('⚠️ Erro ao registrar adapters: $e');

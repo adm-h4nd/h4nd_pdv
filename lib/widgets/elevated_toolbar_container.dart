@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../core/theme/app_theme.dart';
 
@@ -32,8 +33,17 @@ class ElevatedToolbarContainer extends StatelessWidget {
   Widget build(BuildContext context) {
     // Calcula altura total: base + SafeArea (se aplicável)
     // Isso garante que a altura VISUAL do conteúdo seja sempre a mesma
-    final mediaQuery = MediaQuery.of(context);
-    final safeAreaTop = useSafeArea ? mediaQuery.padding.top : 0.0;
+    // IMPORTANTE: Em release, MediaQuery pode não estar disponível imediatamente
+    double safeAreaTop = 0.0;
+    try {
+      final mediaQuery = MediaQuery.maybeOf(context);
+      if (mediaQuery != null && useSafeArea) {
+        safeAreaTop = mediaQuery.padding.top;
+      }
+    } catch (e) {
+      // Se falhar, usa 0 (não crítico)
+      debugPrint('⚠️ Erro ao obter SafeArea: $e');
+    }
     
     // Altura total = altura base + SafeArea
     // Isso mantém a altura visual do conteúdo consistente
