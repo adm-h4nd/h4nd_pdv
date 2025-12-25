@@ -92,3 +92,13 @@
 -dontwarn java.awt.**
 -dontwarn javax.swing.**
 
+# ============================================================================
+# SDK POS - Classes que referenciam APIs internas do Android
+# ============================================================================
+# Ignora avisos sobre classes do SDK POS que referenciam APIs internas do Android
+# Estas classes não estão disponíveis publicamente e causam erros no R8
+-dontwarn android.os.ServiceManager
+-dontwarn android.os.SystemProperties
+-dontwarn com.pos.sdk.**
+-dontnote com.pos.sdk.**
+

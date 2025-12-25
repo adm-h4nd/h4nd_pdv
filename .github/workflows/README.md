@@ -49,6 +49,20 @@ O arquivo ZIP contém:
 - O executável precisa estar junto com as DLLs e a pasta `data/`
 - Os artefatos ficam disponíveis por **30 dias** após a execução do workflow
 
+### 🔧 Erro: MSVCP140.dll não foi encontrada
+
+Se você receber este erro ao executar o aplicativo:
+
+1. **Instale o Visual C++ Redistributable:**
+   - Baixe em: https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist
+   - Escolha **vc_redist.x64.exe** (para Windows 64-bit)
+   - Execute e instale
+   - Reinicie o computador
+
+2. **Execute o aplicativo novamente**
+
+Para mais detalhes, consulte o arquivo `INSTALACAO_WINDOWS.md` na raiz do projeto.
+
 ## ⚠️ Troubleshooting
 
 ### O workflow não está executando

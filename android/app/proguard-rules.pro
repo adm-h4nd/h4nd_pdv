@@ -23,3 +23,8 @@
 # Regras específicas para flavor mobile (aplicadas via build.gradle.kts)
 # As classes do SDK Stone serão ignoradas no flavor mobile
 
+# Ignora avisos sobre classes do SDK POS que não estão disponíveis
+-dontwarn android.os.ServiceManager
+-dontwarn android.os.SystemProperties
+-dontwarn com.pos.sdk.**
+

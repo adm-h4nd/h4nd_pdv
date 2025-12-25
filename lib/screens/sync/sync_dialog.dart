@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../presentation/providers/sync_provider.dart';
 import '../../core/theme/app_theme.dart';
+import '../../data/services/sync/sync_service.dart';
 
 class SyncDialog extends StatefulWidget {
   final SyncProvider syncProvider;
@@ -48,7 +49,7 @@ class _SyncDialogState extends State<SyncDialog> {
                 Expanded(
                   child: Text(
                     result.sucesso
-                        ? 'Sincronização concluída: ${result.produtosSincronizados} produtos, ${result.gruposSincronizados} grupos${result.pedidosSincronizados > 0 ? ', ${result.pedidosSincronizados} pedido(s)' : ''}'
+                        ? _buildMensagemSucesso(result)
                         : 'Erro: ${result.erro ?? "Erro desconhecido"}',
                   ),
                 ),
@@ -135,6 +136,32 @@ class _SyncDialogState extends State<SyncDialog> {
         ),
       ],
     );
+  }
+
+  String _buildMensagemSucesso(SyncResult result) {
+    final partes = <String>[];
+    
+    if (result.produtosSincronizados > 0) {
+      partes.add('${result.produtosSincronizados} produto(s)');
+    }
+    if (result.gruposSincronizados > 0) {
+      partes.add('${result.gruposSincronizados} grupo(s)');
+    }
+    if (result.mesasSincronizadas > 0) {
+      partes.add('${result.mesasSincronizadas} mesa(s)');
+    }
+    if (result.comandasSincronizadas > 0) {
+      partes.add('${result.comandasSincronizadas} comanda(s)');
+    }
+    if (result.pedidosSincronizados > 0) {
+      partes.add('${result.pedidosSincronizados} pedido(s)');
+    }
+    
+    if (partes.isEmpty) {
+      return 'Sincronização concluída';
+    }
+    
+    return 'Sincronização concluída: ${partes.join(', ')}';
   }
 
   @override

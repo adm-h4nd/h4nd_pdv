@@ -40,6 +40,7 @@ class _HomeUnifiedScreenState extends State<HomeUnifiedScreen> {
   int? _setor;
   bool _isLoading = true;
   bool _isEditing = false;
+  bool _isAbrindoNovoPedido = false; // Proteção contra múltiplos cliques
   final GlobalKey _containerKey = GlobalKey();
 
   @override
@@ -162,26 +163,45 @@ class _HomeUnifiedScreenState extends State<HomeUnifiedScreen> {
   }
 
   Future<void> _abrirNovoPedido() async {
-    if (_setor == 2) {
-      // Restaurante: mostra dialog para selecionar mesa/comanda
-      // Venda avulsa permite sem mesa/comanda (independente da configuração)
-      final resultado = await SelecionarMesaComandaDialog.show(
-        context,
-        permiteVendaAvulsa: true, // Sempre permite venda avulsa
-      );
-      if (resultado != null && mounted) {
-        // Usa o método show() que detecta automaticamente se deve usar modal ou tela cheia
-        await NovoPedidoRestauranteScreen.show(
+    // Proteção contra múltiplos cliques
+    if (_isAbrindoNovoPedido) {
+      debugPrint('⚠️ [HomeUnifiedScreen] Já está abrindo novo pedido, ignorando clique');
+      return;
+    }
+    
+    setState(() {
+      _isAbrindoNovoPedido = true;
+    });
+    
+    try {
+      if (_setor == 2) {
+        // Restaurante: mostra dialog para selecionar mesa/comanda
+        // Venda avulsa permite sem mesa/comanda (independente da configuração)
+        final resultado = await SelecionarMesaComandaDialog.show(
           context,
-          mesaId: resultado.mesa?.id,
-          comandaId: resultado.comanda?.id,
+          permiteVendaAvulsa: true, // Sempre permite venda avulsa
+        );
+        if (resultado != null && mounted) {
+          // Usa o método show() que detecta automaticamente se deve usar modal ou tela cheia
+          await NovoPedidoRestauranteScreen.show(
+            context,
+            mesaId: resultado.mesa?.id,
+            comandaId: resultado.comanda?.id,
+          );
+        }
+      } else {
+        // Outros setores: TODO implementar tela de pedido genérica
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Realizar pedido em desenvolvimento')),
         );
       }
-    } else {
-      // Outros setores: TODO implementar tela de pedido genérica
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Realizar pedido em desenvolvimento')),
-      );
+    } finally {
+      // Sempre libera o flag, mesmo se houver erro
+      if (mounted) {
+        setState(() {
+          _isAbrindoNovoPedido = false;
+        });
+      }
     }
   }
 

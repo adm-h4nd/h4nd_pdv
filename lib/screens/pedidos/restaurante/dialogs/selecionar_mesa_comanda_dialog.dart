@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../../../core/adaptive_layout/adaptive_layout.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_dialog.dart';
+import '../../../../core/widgets/teclado_numerico_dialog.dart';
 import '../../../../presentation/providers/services_provider.dart';
 import '../../../../data/services/modules/restaurante/mesa_service.dart';
 import '../../../../data/services/modules/restaurante/comanda_service.dart';
@@ -13,8 +14,6 @@ import '../../../../data/models/modules/restaurante/comanda_list_item.dart';
 import '../../../../data/models/modules/restaurante/mesa_filter.dart';
 import '../../../../data/models/modules/restaurante/comanda_filter.dart';
 import '../../../../data/models/modules/restaurante/configuracao_restaurante_dto.dart';
-import '../../../../data/models/core/api_response.dart';
-import '../../../../data/models/core/paginated_response.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 /// Resultado da seleção de mesa e comanda
@@ -30,11 +29,12 @@ class SelecaoMesaComandaResult {
   bool get temSelecao => mesa != null || comanda != null;
 }
 
-/// Dialog para selecionar mesa e/ou comanda antes de criar um pedido
+/// Tela simples para selecionar mesa e/ou comanda
+/// Mostra apenas ícones - ao clicar, abre entrada numérica
 class SelecionarMesaComandaDialog extends StatefulWidget {
   final String? mesaIdPreSelecionada;
   final String? comandaIdPreSelecionada;
-  final bool permiteVendaAvulsa; // Permite criar pedido sem mesa/comanda
+  final bool permiteVendaAvulsa;
 
   const SelecionarMesaComandaDialog({
     super.key,
@@ -46,13 +46,29 @@ class SelecionarMesaComandaDialog extends StatefulWidget {
   @override
   State<SelecionarMesaComandaDialog> createState() => _SelecionarMesaComandaDialogState();
 
-  /// Mostra o dialog e retorna o resultado da seleção
   static Future<SelecaoMesaComandaResult?> show(
     BuildContext context, {
     String? mesaIdPreSelecionada,
     String? comandaIdPreSelecionada,
     bool permiteVendaAvulsa = false,
   }) async {
+    final adaptive = AdaptiveLayoutProvider.of(context);
+    final isMobile = adaptive?.isMobile ?? true;
+    
+    if (isMobile) {
+      return Navigator.of(context).push<SelecaoMesaComandaResult>(
+        MaterialPageRoute(
+          builder: (context) => AdaptiveLayout(
+            child: SelecionarMesaComandaDialog(
+              mesaIdPreSelecionada: mesaIdPreSelecionada,
+              comandaIdPreSelecionada: comandaIdPreSelecionada,
+              permiteVendaAvulsa: permiteVendaAvulsa,
+            ),
+          ),
+          fullscreenDialog: true,
+        ),
+      );
+    } else {
     return showDialog<SelecaoMesaComandaResult>(
       context: context,
       barrierDismissible: false,
@@ -64,34 +80,23 @@ class SelecionarMesaComandaDialog extends StatefulWidget {
         ),
       ),
     );
+    }
   }
 }
 
 class _SelecionarMesaComandaDialogState extends State<SelecionarMesaComandaDialog> {
   MesaListItemDto? _mesaSelecionada;
   ComandaListItemDto? _comandaSelecionada;
-  String? _mesaIdVinculadaComanda; // ID da mesa vinculada à venda da comanda (se houver)
-  
-  // Controle de busca de mesas
-  final TextEditingController _mesaSearchController = TextEditingController();
-  List<MesaListItemDto> _mesasDisponiveis = [];
-  bool _carregandoMesas = false;
-  bool _mostrarListaMesas = false;
-  
-  // Controle de busca de comandas
-  final TextEditingController _comandaSearchController = TextEditingController();
-  List<ComandaListItemDto> _comandasDisponiveis = [];
-  bool _carregandoComandas = false;
-  bool _mostrarListaComandas = false;
+  String? _mesaIdVinculadaComanda;
+  String? _comandaNumeroPreSelecionada; // Apenas para exibição inicial, não define _comandaSelecionada
+  bool _isLoadingInicial = false; // Controla o loading durante busca inicial
 
   MesaService get _mesaService {
-    final servicesProvider = Provider.of<ServicesProvider>(context, listen: false);
-    return servicesProvider.mesaService;
+    return Provider.of<ServicesProvider>(context, listen: false).mesaService;
   }
 
   ComandaService get _comandaService {
-    final servicesProvider = Provider.of<ServicesProvider>(context, listen: false);
-    return servicesProvider.comandaService;
+    return Provider.of<ServicesProvider>(context, listen: false).comandaService;
   }
 
   ServicesProvider get _servicesProvider {
@@ -106,67 +111,85 @@ class _SelecionarMesaComandaDialogState extends State<SelecionarMesaComandaDialo
     return _servicesProvider.configuracaoRestaurante;
   }
 
-  /// Verifica se deve mostrar seleção de comanda
   bool get _mostrarSelecaoComanda {
-    // Se configuração é PorMesa, não mostra comanda
     if (_configuracaoRestaurante != null && _configuracaoRestaurante!.controlePorMesa) {
       return false;
     }
     return true;
   }
 
-  /// Verifica se comanda é obrigatória
-  bool get _comandaObrigatoria {
-    // Se configuração é PorComanda, comanda é obrigatória
-    if (_configuracaoRestaurante != null && _configuracaoRestaurante!.controlePorComanda) {
-      return true; // Sempre obrigatória quando controle é por comanda
-    }
-    return false;
-  }
-
-  /// Verifica se mesa é obrigatória
-  bool get _mesaObrigatoria {
-    // Se configuração é PorMesa, mesa é obrigatória
-    if (_configuracaoRestaurante != null && _configuracaoRestaurante!.controlePorMesa) {
-      return true;
-    }
-    // Se veio de tela de comanda, mesa é opcional
-    if (widget.comandaIdPreSelecionada != null) {
-      return false;
-    }
-    // Caso contrário, segue configuração padrão
-    return false;
-  }
-
   @override
   void initState() {
     super.initState();
-    _mesaSearchController.addListener(_onMesaSearchChanged);
-    _comandaSearchController.addListener(_onComandaSearchChanged);
+    debugPrint('🔵 [SelecionarMesaComandaDialog] initState:');
+    debugPrint('  - mesaIdPreSelecionada: ${widget.mesaIdPreSelecionada}');
+    debugPrint('  - comandaIdPreSelecionada: ${widget.comandaIdPreSelecionada}');
+    debugPrint('  - permiteVendaAvulsa: ${widget.permiteVendaAvulsa}');
     
-    // Carrega configuração se ainda não foi carregada
-    if (!_servicesProvider.configuracaoRestauranteCarregada) {
-      _servicesProvider.carregarConfiguracaoRestaurante().catchError((e) {
-        debugPrint('⚠️ Erro ao carregar configuração: $e');
-      });
-    }
+    // Verifica se precisa fazer busca inicial
+    final precisaBuscar = widget.mesaIdPreSelecionada != null || widget.comandaIdPreSelecionada != null;
     
-    // Se há pré-seleção, busca os dados
-    if (widget.mesaIdPreSelecionada != null) {
-      _buscarMesaPreSelecionada();
+    if (precisaBuscar) {
+      _carregarDadosIniciais();
     }
-    if (widget.comandaIdPreSelecionada != null) {
-      _buscarComandaPreSelecionada();
+  }
+  
+  /// Carrega dados iniciais com loading e bloqueio de interações
+  Future<void> _carregarDadosIniciais() async {
+    setState(() {
+      _isLoadingInicial = true;
+    });
+    
+    try {
+      // Busca mesa e comanda em paralelo se necessário
+      final futures = <Future>[];
+      
+      if (widget.mesaIdPreSelecionada != null) {
+        futures.add(_buscarMesaPreSelecionada());
+      }
+      
+      // IMPORTANTE: Não carrega comanda pré-selecionada automaticamente
+      // A comanda só será selecionada se o usuário interagir explicitamente
+      // Se comandaIdPreSelecionada for fornecido, apenas busca o número para exibição inicial
+      if (widget.comandaIdPreSelecionada != null) {
+        futures.add(_buscarNumeroComandaPreSelecionada());
+      }
+      
+      // Aguarda todas as buscas terminarem
+      await Future.wait(futures);
+    } catch (e) {
+      debugPrint('Erro ao carregar dados iniciais: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingInicial = false;
+        });
+      }
+    }
+  }
+  
+  /// Busca apenas o número da comanda pré-selecionada para exibição inicial
+  /// Não define _comandaSelecionada - isso só acontece se o usuário confirmar explicitamente
+  Future<void> _buscarNumeroComandaPreSelecionada() async {
+    try {
+      final response = await _comandaService.getComandaById(widget.comandaIdPreSelecionada!);
+      if (response.success && response.data != null && mounted) {
+        setState(() {
+          _comandaNumeroPreSelecionada = response.data!.numero;
+          // NÃO define _comandaSelecionada - apenas armazena o número para exibição
+        });
+      }
+    } catch (e) {
+      debugPrint('Erro ao buscar número da comanda pré-selecionada: $e');
     }
   }
 
   Future<void> _buscarMesaPreSelecionada() async {
     try {
       final response = await _mesaService.getMesaById(widget.mesaIdPreSelecionada!);
-      if (response.success && response.data != null) {
+      if (response.success && response.data != null && mounted) {
         setState(() {
           _mesaSelecionada = response.data;
-          _mesaSearchController.text = response.data!.numero;
         });
       }
     } catch (e) {
@@ -180,56 +203,35 @@ class _SelecionarMesaComandaDialogState extends State<SelecionarMesaComandaDialo
       if (response.success && response.data != null) {
         setState(() {
           _comandaSelecionada = response.data;
-          _comandaSearchController.text = response.data!.numero;
         });
         
-        // Buscar venda aberta da comanda para validar mesa vinculada
-        if (_configuracaoRestaurante?.controlePorComanda == true) {
           try {
             final vendaResponse = await _vendaService.getVendaAbertaPorComanda(widget.comandaIdPreSelecionada!);
-            
             if (vendaResponse.success && vendaResponse.data != null && vendaResponse.data!.mesaId != null) {
-              final venda = vendaResponse.data!;
-              _mesaIdVinculadaComanda = venda.mesaId;
-              
-              // Se tem mesa pré-selecionada e é diferente da mesa vinculada, mostrar erro e limpar comanda
-              if (widget.mesaIdPreSelecionada != null && widget.mesaIdPreSelecionada != venda.mesaId) {
-                // Armazena dados antes de limpar
-                final numeroComanda = response.data!.numero;
-                final nomeMesaVinculada = venda.mesaNome ?? 'desconhecida';
-                
-                // Limpa a comanda selecionada (não muda a mesa)
+            _mesaIdVinculadaComanda = vendaResponse.data!.mesaId;
+            
+            if (widget.mesaIdPreSelecionada != null && widget.mesaIdPreSelecionada != vendaResponse.data!.mesaId) {
                 setState(() {
                   _comandaSelecionada = null;
-                  _comandaSearchController.clear();
                   _mesaIdVinculadaComanda = null;
                 });
                 
-                // Mostra dialog de erro
                 await AppDialog.showError(
                   context: context,
                   title: 'Comanda já vinculada',
-                  message: 'A comanda $numeroComanda já está vinculada à mesa $nomeMesaVinculada. '
-                      'Todos os pedidos desta comanda devem ser feitos na mesma mesa.\n\n'
-                      'Por favor, selecione outra comanda.',
-                );
-                return; // Não preenche mesa automaticamente
-              } else {
-                // Preenche mesa automaticamente se não tinha mesa pré-selecionada
-                if (widget.mesaIdPreSelecionada == null) {
-                  final mesaResponse = await _mesaService.getMesaById(venda.mesaId!);
+                message: 'A comanda ${response.data!.numero} já está vinculada a outra mesa.',
+              );
+            } else if (widget.mesaIdPreSelecionada == null) {
+              final mesaResponse = await _mesaService.getMesaById(vendaResponse.data!.mesaId!);
                   if (mesaResponse.success && mesaResponse.data != null) {
                     setState(() {
                       _mesaSelecionada = mesaResponse.data;
-                      _mesaSearchController.text = mesaResponse.data!.numero;
                     });
-                  }
                 }
               }
             }
           } catch (e) {
-            debugPrint('⚠️ Erro ao buscar venda aberta da comanda pré-selecionada: $e');
-          }
+          debugPrint('⚠️ Erro ao buscar venda aberta: $e');
         }
       }
     } catch (e) {
@@ -237,336 +239,285 @@ class _SelecionarMesaComandaDialogState extends State<SelecionarMesaComandaDialo
     }
   }
 
-  @override
-  void dispose() {
-    _mesaSearchController.dispose();
-    _comandaSearchController.dispose();
-    super.dispose();
-  }
+  Future<void> _abrirEntradaMesa() async {
+    final numero = await TecladoNumericoDialog.show(
+      context,
+      titulo: 'Digite o número da mesa',
+      valorInicial: _mesaSelecionada?.numero,
+      hint: 'Número da mesa',
+      icon: Icons.table_restaurant,
+      cor: AppTheme.primaryColor,
+    );
 
-  void _onMesaSearchChanged() {
-    final query = _mesaSearchController.text.trim();
-    if (query.isEmpty) {
-      setState(() {
-        _mostrarListaMesas = false;
-        _mesasDisponiveis = [];
-      });
-      return;
+    if (numero != null && numero.trim().isNotEmpty) {
+      await _buscarMesa(numero.trim());
     }
-
-    _buscarMesas(query);
   }
 
-  void _onComandaSearchChanged() {
-    final query = _comandaSearchController.text.trim();
-    if (query.isEmpty) {
-      setState(() {
-        _mostrarListaComandas = false;
-        _comandasDisponiveis = [];
-      });
-      return;
+  Future<void> _abrirEntradaComanda() async {
+    final numero = await TecladoNumericoDialog.show(
+      context,
+      titulo: 'Digite o número da comanda',
+      valorInicial: _comandaSelecionada?.numero ?? _comandaNumeroPreSelecionada,
+      hint: 'Número ou código da comanda',
+      icon: Icons.receipt_long,
+      cor: AppTheme.infoColor,
+    );
+
+    if (numero != null && numero.trim().isNotEmpty) {
+      await _buscarComanda(numero.trim());
     }
-
-    _buscarComandas(query);
   }
 
-  Future<void> _buscarMesas(String query) async {
-    setState(() {
-      _carregandoMesas = true;
-      _mostrarListaMesas = true;
-    });
-
+  Future<void> _buscarMesa(String numero) async {
     try {
       final response = await _mesaService.searchMesas(
         page: 1,
-        pageSize: 100, // Buscar mais para filtrar localmente
+        pageSize: 100,
         filter: MesaFilterDto(
-          searchTerm: query,
+          searchTerm: numero,
           ativa: true,
         ),
       );
 
-      if (response.success && response.data != null) {
+      if (response.success && response.data != null && response.data!.list.isNotEmpty) {
+        final mesas = response.data!.list;
+        
+        // IMPORTANTE: Busca apenas correspondência EXATA
+        // Não aceita correspondência parcial
+        MesaListItemDto? mesaExata;
+        try {
+          mesaExata = mesas.firstWhere(
+            (m) => m.numero.toLowerCase() == numero.toLowerCase(),
+          );
+        } catch (e) {
+          // Não encontrou correspondência exata
+          mesaExata = null;
+        }
+        
+        // Se não encontrou correspondência exata, rejeita
+        if (mesaExata == null) {
         setState(() {
-          _mesasDisponiveis = response.data!.list;
-          _carregandoMesas = false;
+            _mesaSelecionada = null;
+          });
+          await AppDialog.showError(
+            context: context,
+            title: 'Mesa não encontrada',
+            message: 'Não foi possível encontrar a mesa "$numero". Verifique o número e tente novamente.',
+          );
+          return;
+        }
+        
+        // Validação de comanda vinculada
+        if (_comandaSelecionada != null && _mesaIdVinculadaComanda != null && mesaExata.id != _mesaIdVinculadaComanda) {
+          // Limpa seleção de mesa se comanda está vinculada a outra mesa
+          setState(() {
+            _mesaSelecionada = null;
+          });
+          await AppDialog.showError(
+            context: context,
+            title: 'Comanda já vinculada',
+            message: 'A comanda ${_comandaSelecionada!.numero} já está vinculada a outra mesa.',
+          );
+          return;
+        }
+        
+        // Mesa encontrada e validada - seleciona
+        setState(() {
+          _mesaSelecionada = mesaExata;
         });
       } else {
+        // Mesa não encontrada - limpa seleção e mostra erro
         setState(() {
-          _mesasDisponiveis = [];
-          _carregandoMesas = false;
+          _mesaSelecionada = null;
         });
+        await AppDialog.showError(
+          context: context,
+          title: 'Mesa não encontrada',
+          message: 'Não foi possível encontrar a mesa "$numero". Verifique o número e tente novamente.',
+        );
       }
     } catch (e) {
+      // Erro na busca - limpa seleção e mostra erro
       setState(() {
-        _mesasDisponiveis = [];
-        _carregandoMesas = false;
+        _mesaSelecionada = null;
       });
+      await AppDialog.showError(
+        context: context,
+        title: 'Erro ao buscar mesa',
+        message: 'Não foi possível buscar a mesa. Tente novamente.',
+      );
+      debugPrint('Erro ao buscar mesa: $e');
     }
   }
 
-  Future<void> _buscarComandas(String query) async {
-    setState(() {
-      _carregandoComandas = true;
-      _mostrarListaComandas = true;
-    });
-
+  Future<void> _buscarComanda(String numero) async {
     try {
       final response = await _comandaService.searchComandas(
         page: 1,
-        pageSize: 20,
+        pageSize: 100,
         filter: ComandaFilterDto(
-          search: query,
+          search: numero,
           ativa: true,
         ),
       );
 
-      if (response.success && response.data != null) {
-        setState(() {
-          _comandasDisponiveis = response.data!.list;
-          _carregandoComandas = false;
-        });
-      } else {
-        setState(() {
-          _comandasDisponiveis = [];
-          _carregandoComandas = false;
-        });
-      }
+      if (response.success && response.data != null && response.data!.list.isNotEmpty) {
+        final comandas = response.data!.list;
+        
+        // IMPORTANTE: Busca apenas correspondência EXATA
+        // Por número ou código de barras, mas deve ser exato
+        ComandaListItemDto? comandaExata;
+        try {
+          comandaExata = comandas.firstWhere(
+            (c) => c.numero.toLowerCase() == numero.toLowerCase() ||
+                   (c.codigoBarras != null && c.codigoBarras!.toLowerCase() == numero.toLowerCase()),
+          );
     } catch (e) {
-      setState(() {
-        _comandasDisponiveis = [];
-        _carregandoComandas = false;
-      });
-    }
-  }
-
-  void _selecionarMesa(MesaListItemDto mesa) async {
-    // Validação: se a comanda já tem mesa vinculada e é diferente, bloquear e limpar comanda
-    if (_comandaSelecionada != null && _mesaIdVinculadaComanda != null && mesa.id != _mesaIdVinculadaComanda) {
-      // Armazena número da comanda antes de limpar
-      final numeroComanda = _comandaSelecionada!.numero;
-      
-      // Limpa a comanda selecionada
+          // Não encontrou correspondência exata
+          comandaExata = null;
+        }
+        
+        // Se não encontrou correspondência exata, rejeita
+        if (comandaExata == null) {
       setState(() {
         _comandaSelecionada = null;
-        _comandaSearchController.clear();
         _mesaIdVinculadaComanda = null;
       });
-      
-      // Mostra dialog de erro
       await AppDialog.showError(
         context: context,
-        title: 'Comanda já vinculada',
-        message: 'A comanda $numeroComanda já está vinculada a outra mesa. '
-            'Todos os pedidos desta comanda devem ser feitos na mesma mesa.\n\n'
-            'Por favor, selecione outra comanda.',
-      );
-      return; // Não permite selecionar mesa diferente
+            title: 'Comanda não encontrada',
+            message: 'Não foi possível encontrar a comanda "$numero". Verifique o número ou código e tente novamente.',
+          );
+          return;
     }
     
     setState(() {
-      _mesaSelecionada = mesa;
-      _mesaSearchController.text = mesa.numero;
-      _mostrarListaMesas = false;
-    });
+          _comandaSelecionada = comandaExata;
+          _mesaIdVinculadaComanda = null;
+        });
+
+        // Buscar venda aberta para preencher mesa automaticamente
+        try {
+          final vendaResponse = await _vendaService.getVendaAbertaPorComanda(comandaExata.id);
+        if (vendaResponse.success && vendaResponse.data != null && vendaResponse.data!.mesaId != null) {
+          final venda = vendaResponse.data!;
+            _mesaIdVinculadaComanda = venda.mesaId;
+          
+            // Validação: se já tem mesa selecionada e é diferente da vinculada, limpa comanda
+          if (_mesaSelecionada != null && _mesaSelecionada!.id != venda.mesaId) {
+            setState(() {
+              _comandaSelecionada = null;
+              _mesaIdVinculadaComanda = null;
+            });
+            
+            await AppDialog.showError(
+              context: context,
+              title: 'Comanda já vinculada',
+                message: 'A comanda ${comandaExata.numero} já está vinculada à mesa ${venda.mesaNome}.',
+            );
+              return;
+          }
+          
+            // Preenche mesa automaticamente se não tinha mesa selecionada
+          final mesaResponse = await _mesaService.getMesaById(venda.mesaId!);
+          if (mesaResponse.success && mesaResponse.data != null) {
+            setState(() {
+              _mesaSelecionada = mesaResponse.data;
+            });
+            }
+          }
+        } catch (e) {
+          debugPrint('⚠️ Erro ao buscar venda aberta: $e');
+          }
+        } else {
+        // Comanda não encontrada - limpa seleção e mostra erro
+        setState(() {
+          _comandaSelecionada = null;
+          _mesaIdVinculadaComanda = null;
+        });
+        await AppDialog.showError(
+          context: context,
+          title: 'Comanda não encontrada',
+          message: 'Não foi possível encontrar a comanda "$numero". Verifique o número ou código e tente novamente.',
+        );
+        }
+      } catch (e) {
+      // Erro na busca - limpa seleção e mostra erro
+      setState(() {
+        _comandaSelecionada = null;
+        _mesaIdVinculadaComanda = null;
+      });
+      await AppDialog.showError(
+        context: context,
+        title: 'Erro ao buscar comanda',
+        message: 'Não foi possível buscar a comanda. Tente novamente.',
+      );
+      debugPrint('Erro ao buscar comanda: $e');
+    }
   }
 
   void _removerMesa() {
     setState(() {
       _mesaSelecionada = null;
-      _mesaSearchController.clear();
-      _mostrarListaMesas = false;
     });
-  }
-
-  void _selecionarComanda(ComandaListItemDto comanda) async {
-    setState(() {
-      _comandaSelecionada = comanda;
-      _comandaSearchController.text = comanda.numero;
-      _mostrarListaComandas = false;
-      _mesaIdVinculadaComanda = null; // Reset ao selecionar nova comanda
-    });
-
-    // Buscar venda aberta da comanda para preencher mesa automaticamente e validar
-    if (_configuracaoRestaurante?.controlePorComanda == true) {
-      try {
-        debugPrint('🔍 Buscando venda aberta da comanda ${comanda.numero}...');
-        final vendaResponse = await _vendaService.getVendaAbertaPorComanda(comanda.id);
-        
-        if (vendaResponse.success && vendaResponse.data != null && vendaResponse.data!.mesaId != null) {
-          final venda = vendaResponse.data!;
-          _mesaIdVinculadaComanda = venda.mesaId; // Armazena ID da mesa vinculada
-          debugPrint('✅ Venda aberta encontrada com mesa: ${venda.mesaId} (${venda.mesaNome})');
-          
-          // Se já tem mesa selecionada e é diferente da mesa vinculada, mostrar erro e limpar comanda
-          if (_mesaSelecionada != null && _mesaSelecionada!.id != venda.mesaId) {
-            // Limpa a comanda selecionada (não muda a mesa)
-            setState(() {
-              _comandaSelecionada = null;
-              _comandaSearchController.clear();
-              _mesaIdVinculadaComanda = null;
-            });
-            
-            // Mostra dialog de erro
-            await AppDialog.showError(
-              context: context,
-              title: 'Comanda já vinculada',
-              message: 'A comanda ${comanda.numero} já está vinculada à mesa ${venda.mesaNome}. '
-                  'Todos os pedidos desta comanda devem ser feitos na mesma mesa.\n\n'
-                  'Por favor, selecione outra comanda.',
-            );
-            return; // Não preenche mesa automaticamente
-          }
-          
-          // Buscar dados da mesa vinculada e preencher automaticamente
-          final mesaResponse = await _mesaService.getMesaById(venda.mesaId!);
-          if (mesaResponse.success && mesaResponse.data != null) {
-            setState(() {
-              _mesaSelecionada = mesaResponse.data;
-              _mesaSearchController.text = mesaResponse.data!.numero;
-            });
-            debugPrint('✅ Mesa preenchida automaticamente: ${mesaResponse.data!.numero}');
-          }
-        } else {
-          debugPrint('ℹ️ Nenhuma venda aberta encontrada ou venda sem mesa vinculada');
-          _mesaIdVinculadaComanda = null;
-        }
-      } catch (e) {
-        debugPrint('⚠️ Erro ao buscar venda aberta da comanda: $e');
-        _mesaIdVinculadaComanda = null;
-        // Não bloqueia a seleção da comanda se houver erro
-      }
-    }
   }
 
   void _removerComanda() {
     setState(() {
       _comandaSelecionada = null;
-      _comandaSearchController.clear();
-      _mostrarListaComandas = false;
-      _mesaIdVinculadaComanda = null; // Limpa também a referência da mesa vinculada
+      _mesaIdVinculadaComanda = null;
     });
   }
 
   bool _podeConfirmar() {
-    // Se permite venda avulsa, sempre pode confirmar (mesmo sem seleção)
-    if (widget.permiteVendaAvulsa) {
+    // Sempre permite confirmar - tudo é opcional
+    // A diferença é apenas se mostra ou não a opção de comanda baseado na configuração
       return true;
-    }
-    
-    // Se configuração é PorComanda, comanda é obrigatória
-    // Verifica se foi selecionada ou se já veio pré-selecionada (carregada em initState)
-    if (_comandaObrigatoria) {
-      final temComanda = _comandaSelecionada != null;
-      if (!temComanda) {
-        return false;
-      }
-    }
-    
-    // Se configuração é PorMesa, mesa é obrigatória
-    // Verifica se foi selecionada ou se já veio pré-selecionada (carregada em initState)
-    if (_mesaObrigatoria && widget.mesaIdPreSelecionada == null) {
-      if (_mesaSelecionada == null) {
-        return false;
-      }
-    }
-    
-    // Caso contrário (vindo de comanda), precisa ter pelo menos a comanda
-    // Mesa é opcional quando vem de comanda
-    if (widget.comandaIdPreSelecionada != null) {
-      // Comanda já veio pré-selecionada e foi carregada em initState
-      return _comandaSelecionada != null;
-    }
-    
-    // Fallback: deve ter pelo menos mesa ou comanda
-    return _mesaSelecionada != null || _comandaSelecionada != null || 
-           widget.mesaIdPreSelecionada != null;
   }
 
   void _confirmar() async {
-    // Validação: se comanda é obrigatória, deve ter selecionado ou pré-selecionada (carregada)
-    if (_comandaObrigatoria) {
-      final temComanda = _comandaSelecionada != null;
-      if (!temComanda) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Comanda é obrigatória para criar pedido'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-    }
-
-    // Validação: se mesa é obrigatória, deve ter selecionado ou pré-selecionada
-    if (_mesaObrigatoria && widget.mesaIdPreSelecionada == null) {
-      if (_mesaSelecionada == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Mesa é obrigatória para criar pedido'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-    }
-
-    // Se permite venda avulsa e não selecionou nada, permite continuar
-    if (widget.permiteVendaAvulsa && _mesaSelecionada == null && _comandaSelecionada == null) {
-      Navigator.of(context).pop(
-        SelecaoMesaComandaResult(
-          mesa: null,
-          comanda: null,
-        ),
-      );
-      return;
-    }
-
-    // Validação crítica: se comanda tem mesa vinculada, a mesa selecionada deve ser a mesma
     if (_comandaSelecionada != null && _mesaIdVinculadaComanda != null) {
       final mesaIdSelecionada = _mesaSelecionada?.id ?? widget.mesaIdPreSelecionada;
-      
       if (mesaIdSelecionada != null && mesaIdSelecionada != _mesaIdVinculadaComanda) {
-        // Armazena número da comanda antes de limpar
-        final numeroComanda = _comandaSelecionada!.numero;
-        
-        // Limpa a comanda selecionada
-        setState(() {
-          _comandaSelecionada = null;
-          _comandaSearchController.clear();
-          _mesaIdVinculadaComanda = null;
-        });
-        
-        // Mostra dialog de erro
         await AppDialog.showError(
           context: context,
           title: 'Comanda já vinculada',
-          message: 'A comanda $numeroComanda já está vinculada a outra mesa. '
-              'Todos os pedidos desta comanda devem ser feitos na mesma mesa.\n\n'
-              'Por favor, selecione outra comanda.',
+          message: 'A comanda ${_comandaSelecionada!.numero} já está vinculada a outra mesa.',
         );
-        return; // Bloqueia a confirmação
+        return;
       }
     }
 
-    // Validação básica: deve ter pelo menos mesa ou comanda (a menos que seja venda avulsa)
-    final temMesa = _mesaSelecionada != null || widget.mesaIdPreSelecionada != null;
-    final temComanda = _comandaSelecionada != null || widget.comandaIdPreSelecionada != null;
-    
-    if (!widget.permiteVendaAvulsa && !temMesa && !temComanda) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Selecione uma mesa ou comanda'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
+    // Se há mesa pré-selecionada mas não foi carregada ainda, tenta carregar antes de retornar
+    MesaListItemDto? mesaFinal = _mesaSelecionada;
+    if (mesaFinal == null && widget.mesaIdPreSelecionada != null) {
+      try {
+        final response = await _mesaService.getMesaById(widget.mesaIdPreSelecionada!);
+        if (response.success && response.data != null) {
+          mesaFinal = response.data;
+        }
+      } catch (e) {
+        debugPrint('Erro ao buscar mesa pré-selecionada no confirmar: $e');
+      }
     }
+
+    // Retorna o valor atual de _comandaSelecionada (pode ser null)
+    // Se o usuário não selecionou ou removeu a comanda, será null
+    // Se o usuário selecionou uma comanda, será a comanda selecionada
+    ComandaListItemDto? comandaFinal = _comandaSelecionada;
+
+    debugPrint('✅ [SelecionarMesaComandaDialog] Confirmando seleção:');
+    debugPrint('  - Mesa final: ${mesaFinal?.id} (${mesaFinal?.numero})');
+    debugPrint('  - Comanda final: ${comandaFinal?.id} (${comandaFinal?.numero ?? "null"})');
+    debugPrint('  - Mesa pré-selecionada: ${widget.mesaIdPreSelecionada}');
+    debugPrint('  - Comanda pré-selecionada: ${widget.comandaIdPreSelecionada}');
+    debugPrint('  - _comandaSelecionada: ${_comandaSelecionada?.id} (${_comandaSelecionada?.numero ?? "null"})');
 
     Navigator.of(context).pop(
       SelecaoMesaComandaResult(
-        mesa: _mesaSelecionada,
-        comanda: _comandaSelecionada,
+        mesa: mesaFinal,
+        comanda: comandaFinal, // Será null se o usuário não selecionou ou removeu a comanda
       ),
     );
   }
@@ -578,49 +529,57 @@ class _SelecionarMesaComandaDialogState extends State<SelecionarMesaComandaDialo
   @override
   Widget build(BuildContext context) {
     final adaptive = AdaptiveLayoutProvider.of(context);
-    if (adaptive == null) {
-      return const SizedBox.shrink();
-    }
+    if (adaptive == null) return const SizedBox.shrink();
 
-    final dialogWidth = adaptive.isMobile 
-        ? MediaQuery.of(context).size.width * 0.9
-        : adaptive.isTablet
-            ? 600.0
-            : 700.0;
+    final isMobile = adaptive.isMobile;
 
+    if (isMobile) {
+      return Scaffold(
+        backgroundColor: Colors.white,
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.close, color: AppTheme.textPrimary),
+            onPressed: _cancelar,
+          ),
+          title: Text(
+            'Novo Pedido',
+            style: GoogleFonts.inter(
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              color: AppTheme.textPrimary,
+            ),
+          ),
+          centerTitle: true,
+        ),
+        body: _buildConteudoMobile(adaptive),
+        bottomNavigationBar: _buildBottomBarMobile(adaptive),
+      );
+    } else {
     return Dialog(
       backgroundColor: Colors.transparent,
-      insetPadding: EdgeInsets.all(adaptive.isMobile ? 16 : 24),
+        insetPadding: const EdgeInsets.all(24),
       child: Container(
-        width: dialogWidth,
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.85,
-        ),
+          width: 500,
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(adaptive.isMobile ? 20 : 24),
+            borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.1),
               blurRadius: 20,
               offset: const Offset(0, 8),
-              spreadRadius: 0,
             ),
           ],
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Header
             Container(
-              padding: EdgeInsets.all(adaptive.isMobile ? 20 : 24),
+                padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(
-                    color: Colors.grey.shade200,
-                    width: 1,
-                  ),
-                ),
+                  border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
               ),
               child: Row(
                 children: [
@@ -628,7 +587,7 @@ class _SelecionarMesaComandaDialogState extends State<SelecionarMesaComandaDialo
                     child: Text(
                       'Novo Pedido',
                       style: GoogleFonts.inter(
-                        fontSize: adaptive.isMobile ? 20 : 24,
+                          fontSize: 22,
                         fontWeight: FontWeight.w700,
                         color: AppTheme.textPrimary,
                       ),
@@ -637,103 +596,49 @@ class _SelecionarMesaComandaDialogState extends State<SelecionarMesaComandaDialo
                   IconButton(
                     icon: const Icon(Icons.close, color: AppTheme.textSecondary),
                     onPressed: _cancelar,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
                   ),
                 ],
               ),
             ),
-
-            // Conteúdo
-            Flexible(
-              child: SingleChildScrollView(
-                padding: EdgeInsets.all(adaptive.isMobile ? 20 : 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _getInstrucaoSelecao(),
-                      style: GoogleFonts.inter(
-                        fontSize: adaptive.isMobile ? 14 : 16,
-                        color: AppTheme.textSecondary,
-                      ),
-                    ),
-                    SizedBox(height: adaptive.isMobile ? 24 : 32),
-
-                    // Ordem dos campos baseada na configuração:
-                    // - Se controlePorComanda: Comanda primeiro (obrigatória), Mesa depois (opcional)
-                    // - Se controlePorMesa: Apenas Mesa (comanda oculta)
-                    if (_mostrarSelecaoComanda) ...[
-                      // Controle por Comanda: Comanda primeiro
-                      _buildSelecaoComanda(adaptive),
-                      SizedBox(height: adaptive.isMobile ? 24 : 32),
-                      // Mesa depois (opcional)
-                      _buildSelecaoMesa(adaptive),
-                    ] else ...[
-                      // Controle por Mesa: Apenas Mesa (comanda oculta)
-                      _buildSelecaoMesa(adaptive),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-
-            // Footer com botões
+              Flexible(child: _buildConteudo(adaptive)),
             Container(
-              padding: EdgeInsets.all(adaptive.isMobile ? 20 : 24),
+                padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                border: Border(
-                  top: BorderSide(
-                    color: Colors.grey.shade200,
-                    width: 1,
-                  ),
-                ),
+                  border: Border(top: BorderSide(color: Colors.grey.shade200)),
               ),
               child: Row(
                 children: [
-                  Expanded(
+                    Expanded(
                     child: OutlinedButton(
-                      onPressed: _cancelar,
+                      onPressed: _isLoadingInicial ? null : _cancelar,
                       style: OutlinedButton.styleFrom(
-                        padding: EdgeInsets.symmetric(
-                          vertical: adaptive.isMobile ? 14 : 16,
-                        ),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(adaptive.isMobile ? 12 : 14),
+                            borderRadius: BorderRadius.circular(12),
                         ),
-                        side: BorderSide(color: Colors.grey.shade300),
                       ),
                       child: Text(
                         'Cancelar',
-                        style: GoogleFonts.inter(
-                          fontSize: adaptive.isMobile ? 15 : 16,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.textPrimary,
+                          style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600),
                         ),
                       ),
                     ),
-                  ),
-                  SizedBox(width: adaptive.isMobile ? 12 : 16),
+                    const SizedBox(width: 16),
                   Expanded(
                     flex: 2,
                     child: ElevatedButton(
-                      onPressed: _podeConfirmar() ? _confirmar : null,
+                      onPressed: (_isLoadingInicial || !_podeConfirmar()) ? null : _confirmar,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppTheme.primaryColor,
                         foregroundColor: Colors.white,
-                        padding: EdgeInsets.symmetric(
-                          vertical: adaptive.isMobile ? 14 : 16,
-                        ),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(adaptive.isMobile ? 12 : 14),
+                            borderRadius: BorderRadius.circular(12),
                         ),
                       ),
                       child: Text(
                         'Continuar',
-                        style: GoogleFonts.inter(
-                          fontSize: adaptive.isMobile ? 15 : 16,
-                          fontWeight: FontWeight.w600,
-                        ),
+                          style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600),
                       ),
                     ),
                   ),
@@ -744,596 +649,280 @@ class _SelecionarMesaComandaDialogState extends State<SelecionarMesaComandaDialo
         ),
       ),
     );
-  }
-
-  String _getInstrucaoSelecao() {
-    if (widget.comandaIdPreSelecionada != null) {
-      // Vindo de tela de comanda: comanda já selecionada, mesa opcional
-      return 'Comanda selecionada. Selecione uma mesa (opcional)';
-    } else if (widget.mesaIdPreSelecionada != null && _comandaObrigatoria) {
-      // Vindo de tela de mesa com controle por comanda: mesa já selecionada, comanda obrigatória
-      return 'Mesa selecionada. Selecione a comanda (obrigatória)';
-    } else if (_comandaObrigatoria) {
-      // Controle por comanda: comanda obrigatória
-      return 'Selecione a comanda (obrigatória) e mesa (opcional)';
-    } else if (widget.permiteVendaAvulsa) {
-      return 'Selecione a mesa e/ou comanda (opcional - pode deixar vazio para venda avulsa)';
-    } else {
-      return 'Selecione a mesa e/ou comanda (opcional)';
     }
   }
 
-  Widget _buildSelecaoMesa(AdaptiveLayoutProvider adaptive) {
-    // Mesa é obrigatória apenas se configuração é PorMesa e não veio pré-selecionada
-    final mesaObrigatoria = _mesaObrigatoria && widget.mesaIdPreSelecionada == null;
-    
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
+  /// Conteúdo para mobile (sem botões, que ficam no rodapé)
+  Widget _buildConteudoMobile(AdaptiveLayoutProvider adaptive) {
+    // Mostra loading durante busca inicial
+    if (_isLoadingInicial) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 24),
             Text(
-              'Mesa',
+              'Carregando informações...',
               style: GoogleFonts.inter(
-                fontSize: adaptive.isMobile ? 16 : 18,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.textPrimary,
+                fontSize: 16,
+                color: AppTheme.textSecondary,
               ),
             ),
-            if (!mesaObrigatoria) ...[
-              const SizedBox(width: 8),
-              Text(
-                '(Opcional)',
-                style: GoogleFonts.inter(
-                  fontSize: adaptive.isMobile ? 12 : 13,
-                  fontWeight: FontWeight.w500,
-                  color: AppTheme.textSecondary,
-                ),
-              ),
-            ],
           ],
         ),
-        SizedBox(height: adaptive.isMobile ? 12 : 16),
-        
-        // Campo de busca ou mesa selecionada
-        if (_mesaSelecionada != null)
-          _buildMesaSelecionada(adaptive)
-        else
-          _buildCampoBuscaMesa(adaptive),
-
-        // Lista de resultados
-        if (_mostrarListaMesas && _mesaSelecionada == null)
-          _buildListaMesas(adaptive),
-      ],
-    );
-  }
-
-  Widget _buildCampoBuscaMesa(AdaptiveLayoutProvider adaptive) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8F9FA),
-        borderRadius: BorderRadius.circular(adaptive.isMobile ? 12 : 14),
-        border: Border.all(
-          color: Colors.grey.shade200,
-          width: 1,
-        ),
-      ),
-      child: TextField(
-        controller: _mesaSearchController,
-        decoration: InputDecoration(
-          hintText: 'Buscar mesa...',
-          hintStyle: GoogleFonts.inter(
-            color: Colors.grey.shade500,
-            fontSize: adaptive.isMobile ? 14 : 15,
-          ),
-          prefixIcon: Icon(
-            Icons.table_restaurant,
-            color: Colors.grey.shade400,
-            size: adaptive.isMobile ? 20 : 22,
-          ),
-          suffixIcon: _mesaSearchController.text.isNotEmpty
-              ? IconButton(
-                  icon: Icon(
-                    Icons.clear,
-                    color: Colors.grey.shade400,
-                    size: adaptive.isMobile ? 20 : 22,
-                  ),
-                  onPressed: () {
-                    _mesaSearchController.clear();
-                  },
-                )
-              : null,
-          border: InputBorder.none,
-          contentPadding: EdgeInsets.symmetric(
-            horizontal: adaptive.isMobile ? 16 : 20,
-            vertical: adaptive.isMobile ? 14 : 16,
-          ),
-        ),
-        style: GoogleFonts.inter(
-          fontSize: adaptive.isMobile ? 15 : 16,
-          color: AppTheme.textPrimary,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMesaSelecionada(AdaptiveLayoutProvider adaptive) {
-    return Container(
-      padding: EdgeInsets.all(adaptive.isMobile ? 16 : 20),
-      decoration: BoxDecoration(
-        color: AppTheme.primaryColor.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(adaptive.isMobile ? 12 : 14),
-        border: Border.all(
-          color: AppTheme.primaryColor.withOpacity(0.2),
-          width: 1,
-        ),
-      ),
-      child: Row(
+      );
+    }
+    
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(
-            padding: EdgeInsets.all(adaptive.isMobile ? 10 : 12),
-            decoration: BoxDecoration(
-              color: AppTheme.primaryColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(adaptive.isMobile ? 10 : 12),
+          // Mensagem informativa - sempre opcional
+          Text(
+            _mostrarSelecaoComanda 
+              ? 'Selecione mesa e/ou comanda (opcional)'
+              : 'Selecione uma mesa (opcional)',
+            style: GoogleFonts.inter(
+              fontSize: 16,
+              color: AppTheme.textSecondary,
             ),
-            child: Icon(
-              Icons.table_restaurant,
-              color: AppTheme.primaryColor,
-              size: adaptive.isMobile ? 20 : 24,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 32),
+          
+          // Ícone Mesa
+          _buildCardSelecao(
+            adaptive,
+            label: 'Mesa',
+            selecionado: _mesaSelecionada,
+            numero: _mesaSelecionada?.numero,
+            icon: Icons.table_restaurant,
+            cor: AppTheme.primaryColor,
+            onTap: _isLoadingInicial ? null : _abrirEntradaMesa,
+            onRemover: _isLoadingInicial ? null : _removerMesa,
+          ),
+          
+          if (_mostrarSelecaoComanda) ...[
+            const SizedBox(height: 24),
+            _buildCardSelecao(
+              adaptive,
+              label: 'Comanda',
+              selecionado: _comandaSelecionada,
+              numero: _comandaSelecionada?.numero,
+              icon: Icons.receipt_long,
+              cor: AppTheme.infoColor,
+              onTap: _isLoadingInicial ? null : _abrirEntradaComanda,
+              onRemover: _isLoadingInicial ? null : _removerComanda,
             ),
-          ),
-          SizedBox(width: adaptive.isMobile ? 12 : 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _mesaSelecionada!.numero,
-                  style: GoogleFonts.inter(
-                    fontSize: adaptive.isMobile ? 16 : 18,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.textPrimary,
-                  ),
-                ),
-                if (_mesaSelecionada!.descricao != null && _mesaSelecionada!.descricao!.isNotEmpty)
-                  Text(
-                    _mesaSelecionada!.descricao!,
-                    style: GoogleFonts.inter(
-                      fontSize: adaptive.isMobile ? 13 : 14,
-                      color: AppTheme.textSecondary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-              ],
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.close, color: AppTheme.textSecondary),
-            onPressed: _removerMesa,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-          ),
+          ],
+          
+          // Espaço extra no final para não ficar colado nos botões do rodapé
+          const SizedBox(height: 24),
         ],
       ),
     );
   }
 
-  Widget _buildListaMesas(AdaptiveLayoutProvider adaptive) {
+  /// Rodapé fixo com botões para mobile
+  Widget _buildBottomBarMobile(AdaptiveLayoutProvider adaptive) {
     return Container(
-      margin: const EdgeInsets.only(top: 8),
-      constraints: const BoxConstraints(maxHeight: 200),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(adaptive.isMobile ? 12 : 14),
-        border: Border.all(
-          color: Colors.grey.shade200,
-          width: 1,
-        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-            spreadRadius: 0,
+            blurRadius: 10,
+            offset: const Offset(0, -2),
           ),
         ],
       ),
-      child: _carregandoMesas
-          ? Padding(
-              padding: const EdgeInsets.all(20),
-              child: Center(
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: AppTheme.primaryColor,
+      padding: const EdgeInsets.all(16),
+      child: SafeArea(
+        child: Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: _isLoadingInicial ? null : _cancelar,
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: Text(
+                  'Cancelar',
+                  style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600),
                 ),
               ),
-            )
-          : _mesasDisponiveis.isEmpty
-              ? Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Center(
-                    child: Text(
-                      'Nenhuma mesa encontrada',
-                      style: GoogleFonts.inter(
-                        fontSize: adaptive.isMobile ? 14 : 15,
-                        color: AppTheme.textSecondary,
-                      ),
-                    ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              flex: 2,
+              child: ElevatedButton(
+                onPressed: (_isLoadingInicial || !_podeConfirmar()) ? null : _confirmar,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryColor,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                )
-              : ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: _mesasDisponiveis.length,
-                  itemBuilder: (context, index) {
-                    final mesa = _mesasDisponiveis[index];
-                    return _buildItemMesa(mesa, adaptive);
-                  },
                 ),
+                child: Text(
+                  'Continuar',
+                  style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
-  Widget _buildItemMesa(MesaListItemDto mesa, AdaptiveLayoutProvider adaptive) {
-    final isOcupada = mesa.status.toLowerCase() == 'ocupada';
+  /// Conteúdo para desktop (com botões dentro)
+  Widget _buildConteudo(AdaptiveLayoutProvider adaptive) {
+    // Mostra loading durante busca inicial
+    if (_isLoadingInicial) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 24),
+            Text(
+              'Carregando informações...',
+              style: GoogleFonts.inter(
+                fontSize: 18,
+                color: AppTheme.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(32),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // Mensagem informativa - sempre opcional
+          Text(
+            _mostrarSelecaoComanda 
+              ? 'Selecione mesa e/ou comanda (opcional)'
+              : 'Selecione uma mesa (opcional)',
+            style: GoogleFonts.inter(
+              fontSize: 18,
+              color: AppTheme.textSecondary,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 40),
+          
+          // Ícone Mesa
+          _buildCardSelecao(
+            adaptive,
+            label: 'Mesa',
+            selecionado: _mesaSelecionada,
+            numero: _mesaSelecionada?.numero,
+            icon: Icons.table_restaurant,
+            cor: AppTheme.primaryColor,
+            onTap: _isLoadingInicial ? null : _abrirEntradaMesa,
+            onRemover: _isLoadingInicial ? null : _removerMesa,
+          ),
+          
+          if (_mostrarSelecaoComanda) ...[
+            const SizedBox(height: 32),
+            _buildCardSelecao(
+              adaptive,
+              label: 'Comanda',
+              selecionado: _comandaSelecionada,
+              numero: _comandaSelecionada?.numero,
+              icon: Icons.receipt_long,
+              cor: AppTheme.infoColor,
+              onTap: _isLoadingInicial ? null : _abrirEntradaComanda,
+              onRemover: _isLoadingInicial ? null : _removerComanda,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCardSelecao(
+    AdaptiveLayoutProvider adaptive, {
+    required String label,
+    required dynamic selecionado,
+    required String? numero,
+    required IconData icon,
+    required Color cor,
+    required VoidCallback? onTap,
+    required VoidCallback? onRemover,
+  }) {
+    final isSelecionado = selecionado != null;
+    final isDisabled = onTap == null || onRemover == null;
     
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () => _selecionarMesa(mesa),
-        child: Padding(
-          padding: EdgeInsets.all(adaptive.isMobile ? 14 : 16),
-          child: Row(
-            children: [
-              Container(
-                padding: EdgeInsets.all(adaptive.isMobile ? 8 : 10),
-                decoration: BoxDecoration(
-                  color: isOcupada
-                      ? AppTheme.warningColor.withOpacity(0.1)
-                      : AppTheme.successColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(adaptive.isMobile ? 8 : 10),
-                ),
-                child: Icon(
-                  Icons.table_restaurant,
-                  color: isOcupada
-                      ? AppTheme.warningColor
-                      : AppTheme.successColor,
-                  size: adaptive.isMobile ? 18 : 20,
-                ),
-              ),
-              SizedBox(width: adaptive.isMobile ? 12 : 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      mesa.numero,
-                      style: GoogleFonts.inter(
-                        fontSize: adaptive.isMobile ? 15 : 16,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.textPrimary,
-                      ),
-                    ),
-                    if (mesa.descricao != null && mesa.descricao!.isNotEmpty)
-                      Text(
-                        mesa.descricao!,
-                        style: GoogleFonts.inter(
-                          fontSize: adaptive.isMobile ? 13 : 14,
-                          color: AppTheme.textSecondary,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: EdgeInsets.symmetric(
-                  horizontal: adaptive.isMobile ? 8 : 10,
-                  vertical: adaptive.isMobile ? 4 : 6,
-                ),
-                decoration: BoxDecoration(
-                  color: isOcupada
-                      ? AppTheme.warningColor.withOpacity(0.1)
-                      : AppTheme.successColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(adaptive.isMobile ? 8 : 10),
-                ),
-                child: Text(
-                  mesa.status,
-                  style: GoogleFonts.inter(
-                    fontSize: adaptive.isMobile ? 11 : 12,
-                    fontWeight: FontWeight.w600,
-                    color: isOcupada
-                        ? AppTheme.warningColor
-                        : AppTheme.successColor,
-                  ),
-                ),
-              ),
-            ],
+        onTap: isDisabled ? null : onTap,
+        borderRadius: BorderRadius.circular(adaptive.isMobile ? 20 : 24),
+        child: Opacity(
+          opacity: isDisabled ? 0.5 : 1.0,
+          child: Container(
+            padding: EdgeInsets.all(adaptive.isMobile ? 32 : 40),
+        decoration: BoxDecoration(
+              color: isSelecionado ? cor.withOpacity(0.1) : Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(adaptive.isMobile ? 20 : 24),
+          border: Border.all(
+                color: isSelecionado ? cor : Colors.grey.shade300,
+                width: isSelecionado ? 2 : 1,
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildSelecaoComanda(AdaptiveLayoutProvider adaptive) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
+        child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
-              'Comanda',
-              style: GoogleFonts.inter(
-                fontSize: adaptive.isMobile ? 16 : 18,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.textPrimary,
+                Icon(
+                  icon,
+                  size: adaptive.isMobile ? 64 : 80,
+                  color: isSelecionado ? cor : Colors.grey.shade400,
+                ),
+                SizedBox(width: adaptive.isMobile ? 24 : 32),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                        label,
+                    style: GoogleFonts.inter(
+                          fontSize: adaptive.isMobile ? 18 : 20,
+                      fontWeight: FontWeight.w600,
+                          color: AppTheme.textSecondary,
+                    ),
+                  ),
+                      SizedBox(height: 8),
+                    Text(
+                        isSelecionado ? numero! : 'Toque para selecionar',
+                      style: GoogleFonts.inter(
+                          fontSize: adaptive.isMobile ? 24 : 28,
+                          fontWeight: FontWeight.w700,
+                          color: isSelecionado ? cor : Colors.grey.shade400,
+                      ),
+                    ),
+                ],
               ),
             ),
-            if (_comandaObrigatoria) ...[
-              const SizedBox(width: 8),
-              Text(
-                '(Obrigatória)',
-                style: GoogleFonts.inter(
-                  fontSize: adaptive.isMobile ? 12 : 13,
-                  fontWeight: FontWeight.w500,
-                  color: AppTheme.errorColor,
-                ),
-              ),
-            ],
+                if (isSelecionado)
+            IconButton(
+                    icon: Icon(Icons.close, color: cor),
+                    onPressed: isDisabled ? null : onRemover,
+                    iconSize: adaptive.isMobile ? 24 : 28,
+            ),
           ],
         ),
-        SizedBox(height: adaptive.isMobile ? 12 : 16),
-        
-        // Campo de busca ou comanda selecionada
-        if (_comandaSelecionada != null)
-          _buildComandaSelecionada(adaptive)
-        else
-          _buildCampoBuscaComanda(adaptive),
-
-        // Lista de resultados
-        if (_mostrarListaComandas && _comandaSelecionada == null)
-          _buildListaComandas(adaptive),
-      ],
-    );
-  }
-
-  Widget _buildCampoBuscaComanda(AdaptiveLayoutProvider adaptive) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8F9FA),
-        borderRadius: BorderRadius.circular(adaptive.isMobile ? 12 : 14),
-        border: Border.all(
-          color: Colors.grey.shade200,
-          width: 1,
-        ),
-      ),
-      child: TextField(
-        controller: _comandaSearchController,
-        decoration: InputDecoration(
-          hintText: 'Buscar comanda por número ou código de barras...',
-          hintStyle: GoogleFonts.inter(
-            color: Colors.grey.shade500,
-            fontSize: adaptive.isMobile ? 14 : 15,
-          ),
-          prefixIcon: Icon(
-            Icons.receipt_long,
-            color: Colors.grey.shade400,
-            size: adaptive.isMobile ? 20 : 22,
-          ),
-          suffixIcon: _comandaSearchController.text.isNotEmpty
-              ? IconButton(
-                  icon: Icon(
-                    Icons.clear,
-                    color: Colors.grey.shade400,
-                    size: adaptive.isMobile ? 20 : 22,
-                  ),
-                  onPressed: () {
-                    _comandaSearchController.clear();
-                  },
-                )
-              : null,
-          border: InputBorder.none,
-          contentPadding: EdgeInsets.symmetric(
-            horizontal: adaptive.isMobile ? 16 : 20,
-            vertical: adaptive.isMobile ? 14 : 16,
-          ),
-        ),
-        style: GoogleFonts.inter(
-          fontSize: adaptive.isMobile ? 15 : 16,
-          color: AppTheme.textPrimary,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildComandaSelecionada(AdaptiveLayoutProvider adaptive) {
-    return Container(
-      padding: EdgeInsets.all(adaptive.isMobile ? 16 : 20),
-      decoration: BoxDecoration(
-        color: AppTheme.infoColor.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(adaptive.isMobile ? 12 : 14),
-        border: Border.all(
-          color: AppTheme.infoColor.withOpacity(0.2),
-          width: 1,
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: EdgeInsets.all(adaptive.isMobile ? 10 : 12),
-            decoration: BoxDecoration(
-              color: AppTheme.infoColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(adaptive.isMobile ? 10 : 12),
-            ),
-            child: Icon(
-              Icons.receipt_long,
-              color: AppTheme.infoColor,
-              size: adaptive.isMobile ? 20 : 24,
-            ),
-          ),
-          SizedBox(width: adaptive.isMobile ? 12 : 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _comandaSelecionada!.numero,
-                  style: GoogleFonts.inter(
-                    fontSize: adaptive.isMobile ? 16 : 18,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.textPrimary,
-                  ),
-                ),
-                if (_comandaSelecionada!.codigoBarras != null && _comandaSelecionada!.codigoBarras!.isNotEmpty)
-                  Text(
-                    'Código: ${_comandaSelecionada!.codigoBarras}',
-                    style: GoogleFonts.inter(
-                      fontSize: adaptive.isMobile ? 13 : 14,
-                      color: AppTheme.textSecondary,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.close, color: AppTheme.textSecondary),
-            onPressed: _removerComanda,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildListaComandas(AdaptiveLayoutProvider adaptive) {
-    return Container(
-      margin: const EdgeInsets.only(top: 8),
-      constraints: const BoxConstraints(maxHeight: 200),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(adaptive.isMobile ? 12 : 14),
-        border: Border.all(
-          color: Colors.grey.shade200,
-          width: 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-            spreadRadius: 0,
-          ),
-        ],
-      ),
-      child: _carregandoComandas
-          ? Padding(
-              padding: const EdgeInsets.all(20),
-              child: Center(
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: AppTheme.primaryColor,
-                ),
-              ),
-            )
-          : _comandasDisponiveis.isEmpty
-              ? Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Center(
-                    child: Text(
-                      'Nenhuma comanda encontrada',
-                      style: GoogleFonts.inter(
-                        fontSize: adaptive.isMobile ? 14 : 15,
-                        color: AppTheme.textSecondary,
-                      ),
-                    ),
-                  ),
-                )
-              : ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: _comandasDisponiveis.length,
-                  itemBuilder: (context, index) {
-                    final comanda = _comandasDisponiveis[index];
-                    return _buildItemComanda(comanda, adaptive);
-                  },
-                ),
-    );
-  }
-
-  Widget _buildItemComanda(ComandaListItemDto comanda, AdaptiveLayoutProvider adaptive) {
-    final isAtiva = comanda.status.toLowerCase() == 'ativa';
-    
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => _selecionarComanda(comanda),
-        child: Padding(
-          padding: EdgeInsets.all(adaptive.isMobile ? 14 : 16),
-          child: Row(
-            children: [
-              Container(
-                padding: EdgeInsets.all(adaptive.isMobile ? 8 : 10),
-                decoration: BoxDecoration(
-                  color: isAtiva
-                      ? AppTheme.successColor.withOpacity(0.1)
-                      : AppTheme.infoColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(adaptive.isMobile ? 8 : 10),
-                ),
-                child: Icon(
-                  Icons.receipt_long,
-                  color: isAtiva
-                      ? AppTheme.successColor
-                      : AppTheme.infoColor,
-                  size: adaptive.isMobile ? 18 : 20,
-                ),
-              ),
-              SizedBox(width: adaptive.isMobile ? 12 : 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      comanda.numero,
-                      style: GoogleFonts.inter(
-                        fontSize: adaptive.isMobile ? 15 : 16,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.textPrimary,
-                      ),
-                    ),
-                    if (comanda.codigoBarras != null && comanda.codigoBarras!.isNotEmpty)
-                      Text(
-                        'Código: ${comanda.codigoBarras}',
-                        style: GoogleFonts.inter(
-                          fontSize: adaptive.isMobile ? 12 : 13,
-                          color: AppTheme.textSecondary,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: EdgeInsets.symmetric(
-                  horizontal: adaptive.isMobile ? 8 : 10,
-                  vertical: adaptive.isMobile ? 4 : 6,
-                ),
-                decoration: BoxDecoration(
-                  color: isAtiva
-                      ? AppTheme.successColor.withOpacity(0.1)
-                      : AppTheme.infoColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(adaptive.isMobile ? 8 : 10),
-                ),
-                child: Text(
-                  comanda.status,
-                  style: GoogleFonts.inter(
-                    fontSize: adaptive.isMobile ? 11 : 12,
-                    fontWeight: FontWeight.w600,
-                    color: isAtiva
-                        ? AppTheme.successColor
-                        : AppTheme.infoColor,
-                  ),
-                ),
-              ),
-            ],
           ),
         ),
       ),

@@ -38,6 +38,7 @@ import '../../widgets/mesas/total_item_widget.dart';
 import '../../widgets/mesas/historico_pagamentos_widget.dart';
 import '../../widgets/mesas/enhanced_app_bar_widget.dart';
 import '../../widgets/mesas/compact_header_widget.dart';
+import '../../widgets/elevated_toolbar_container.dart';
 import '../../widgets/mesas/comanda_card_widget.dart';
 import '../../widgets/mesas/botoes_acao_widget.dart';
 import '../../core/utils/date_formatter.dart';
@@ -72,6 +73,7 @@ class DetalhesProdutosMesaScreen extends StatefulWidget {
 class _DetalhesProdutosMesaScreenState extends State<DetalhesProdutosMesaScreen> {
   late MesaDetalhesProvider _provider;
   final _pedidoRepo = PedidoLocalRepository();
+  bool _isAbrindoNovoPedido = false; // Proteção contra múltiplos cliques
 
   ServicesProvider get _servicesProvider {
     return Provider.of<ServicesProvider>(context, listen: false);
@@ -86,15 +88,8 @@ class _DetalhesProdutosMesaScreenState extends State<DetalhesProdutosMesaScreen>
     super.initState();
     _pedidoRepo.getAll(); // Garante que a box está aberta
     
-    // Carrega configuração do restaurante se ainda não foi carregada (cacheada no ServicesProvider)
-    // Não bloqueia a UI - carrega em background
-    if (!_servicesProvider.configuracaoRestauranteCarregada) {
-      _servicesProvider.carregarConfiguracaoRestaurante().catchError((e) {
-        debugPrint('⚠️ Erro ao carregar configuração do restaurante: $e');
-      });
-    }
-    
-    // Cria o provider com as dependências necessárias
+    // Cria o provider imediatamente
+    // A configuração já foi carregada na inicialização do sistema (persistida localmente)
     _provider = MesaDetalhesProvider(
       entidade: widget.entidade,
       pedidoService: _servicesProvider.pedidoService,
@@ -106,8 +101,8 @@ class _DetalhesProdutosMesaScreenState extends State<DetalhesProdutosMesaScreen>
     );
     
     // Carrega produtos quando o widget é criado
-    // O widget é sempre recriado quando muda a mesa/comanda devido ao ValueKey único
-    _provider.loadProdutos();
+    // SEMPRE recarrega tudo do servidor (refresh=true garante recarga completa)
+    _provider.loadProdutos(refresh: true);
     _provider.loadVendaAtual();
     // Comandas serão carregadas automaticamente dentro de loadProdutos() quando controle é por comanda
     
@@ -182,17 +177,10 @@ class _DetalhesProdutosMesaScreenState extends State<DetalhesProdutosMesaScreen>
       builder: (context, _) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
-          appBar: EnhancedAppBarWidget(
-            entidade: widget.entidade,
-            adaptive: adaptive,
-            onRefresh: () => _provider.loadProdutos(refresh: true),
-            statusDinamico: _provider.statusVisual,
-            estaSincronizando: _provider.estaSincronizando,
-            temErros: _provider.temErros,
-            pedidosPendentes: _provider.pedidosPendentes,
-          ),
       body: Column(
         children: [
+          // Barra de ferramentas com informações da mesa/comanda
+          _buildBarraFerramentas(adaptive),
           // Conteúdo das abas ou lista de produtos (scrollável)
           Expanded(
             child: _buildConteudoAbas(adaptive),
@@ -218,81 +206,85 @@ class _DetalhesProdutosMesaScreenState extends State<DetalhesProdutosMesaScreen>
                     historicoExpandido: _provider.historicoPagamentosExpandido,
                     onToggleHistorico: () => _provider.toggleHistoricoPagamentos(),
                     onNovoPedido: () async {
-                        // Lógica baseada no tipo de entidade e configuração
-                        if (widget.entidade.tipo == TipoEntidade.mesa) {
-                          // Tela de Mesa
-                          if (_configuracaoRestaurante != null && 
-                              _configuracaoRestaurante!.controlePorComanda) {
-                            // Controle por Comanda
-                            // Se estiver em uma aba de comanda específica, usa ela diretamente
-                          if (_provider.abaSelecionada != null) {
-                              // Comanda já está selecionada na aba, usa diretamente
-                              NovoPedidoRestauranteScreen.show(
+                        // Proteção contra múltiplos cliques
+                        if (_isAbrindoNovoPedido) {
+                          debugPrint('⚠️ [DetalhesProdutosMesaScreen] Já está abrindo novo pedido, ignorando clique');
+                          return;
+                        }
+                        
+                        setState(() {
+                          _isAbrindoNovoPedido = true;
+                        });
+                        
+                        try {
+                          // Lógica baseada no tipo de entidade
+                          if (widget.entidade.tipo == TipoEntidade.mesa) {
+                            // Tela de Mesa: sempre abre diálogo com mesa pré-selecionada
+                            // Se estiver em uma aba de comanda específica, pré-seleciona também a comanda
+                            String? comandaIdPreSelecionada;
+                            
+                            // Se a aba selecionada é uma comanda (não é "Mesa"), pré-seleciona ela
+                            if (_provider.abaSelecionada != null && 
+                                _provider.abaSelecionada != MesaDetalhesProvider.semComandaId) {
+                              comandaIdPreSelecionada = _provider.abaSelecionada;
+                            }
+                            
+                            final resultado = await SelecionarMesaComandaDialog.show(
+                              context,
+                              mesaIdPreSelecionada: widget.entidade.id,
+                              comandaIdPreSelecionada: comandaIdPreSelecionada,
+                              permiteVendaAvulsa: true, // Permite continuar sem comanda
+                            );
+                            
+                            // Se cancelou, não faz nada. Se confirmou (com ou sem comanda), continua
+                            if (resultado != null && mounted) {
+                              final mesaIdFinal = resultado.mesa?.id ?? widget.entidade.id;
+                              final comandaIdFinal = resultado.comanda?.id;
+                              
+                              debugPrint('📋 [DetalhesProdutosMesaScreen] Abrindo NovoPedidoRestauranteScreen:');
+                              debugPrint('  - MesaId: $mesaIdFinal (resultado.mesa?.id: ${resultado.mesa?.id}, widget.entidade.id: ${widget.entidade.id})');
+                              debugPrint('  - ComandaId: $comandaIdFinal');
+                              
+                              await NovoPedidoRestauranteScreen.show(
                                 context,
-                                mesaId: widget.entidade.id,
-                              comandaId: _provider.abaSelecionada,
-                              ).then((_) {
-                                if (mounted) {
-                                _provider.loadProdutos(refresh: true);
-                                _provider.loadVendaAtual();
-                                }
-                              });
-                            } else {
-                              // Visão Geral: mostra modal com mesa pré-selecionada e comanda obrigatória
-                              final resultado = await SelecionarMesaComandaDialog.show(
-                                context,
-                                mesaIdPreSelecionada: widget.entidade.id,
-                              permiteVendaAvulsa: false,
+                                mesaId: mesaIdFinal,
+                                comandaId: comandaIdFinal, // Opcional
                               );
                               
-                              if (resultado != null && resultado.comanda != null && mounted) {
-                                NovoPedidoRestauranteScreen.show(
-                                  context,
-                                  mesaId: resultado.mesa?.id ?? widget.entidade.id,
-                                  comandaId: resultado.comanda!.id,
-                                ).then((_) {
-                                  if (mounted) {
-                                  _provider.loadProdutos(refresh: true);
-                                  _provider.loadVendaAtual();
-                                  }
-                                });
+                              if (mounted) {
+                                _provider.loadProdutos(refresh: true);
+                                _provider.loadVendaAtual();
                               }
                             }
                           } else {
-                          // Controle por Mesa: adiciona pedido diretamente
-                            NovoPedidoRestauranteScreen.show(
+                            // Tela de Comanda: sempre mostra modal (tudo opcional)
+                            final resultado = await SelecionarMesaComandaDialog.show(
                               context,
-                              mesaId: widget.entidade.id,
-                              comandaId: null,
-                            ).then((_) {
-                              if (mounted) {
-                              _provider.loadProdutos(refresh: true);
-                              _provider.loadVendaAtual();
-                              }
-                            });
-                          }
-                        } else {
-                        // Tela de Comanda: sempre mostra modal
-                          final resultado = await SelecionarMesaComandaDialog.show(
-                            context,
-                            comandaIdPreSelecionada: widget.entidade.id,
-                          permiteVendaAvulsa: false,
-                          );
-                          
-                          if (resultado != null && mounted) {
-                            final comandaIdFinal = resultado.comanda?.id ?? widget.entidade.id;
-                            if (comandaIdFinal.isNotEmpty) {
-                              NovoPedidoRestauranteScreen.show(
+                              comandaIdPreSelecionada: widget.entidade.id,
+                              permiteVendaAvulsa: true, // Permite continuar sem seleção
+                            );
+                            
+                            // Se cancelou, não faz nada. Se confirmou (com ou sem seleção), continua
+                            if (resultado != null && mounted) {
+                              final comandaIdFinal = resultado.comanda?.id ?? widget.entidade.id;
+                              await NovoPedidoRestauranteScreen.show(
                                 context,
                                 mesaId: resultado.mesa?.id,
-                                comandaId: comandaIdFinal,
-                              ).then((_) {
-                                if (mounted) {
+                                comandaId: comandaIdFinal.isNotEmpty ? comandaIdFinal : null,
+                              );
+                              
+                              if (mounted) {
                                 _provider.loadProdutos(refresh: true);
                                 _provider.loadVendaAtual();
-                                }
-                              });
+                              }
                             }
+                          }
+                        } finally {
+                          // Sempre libera o flag, mesmo se houver erro
+                          if (mounted) {
+                            setState(() {
+                              _isAbrindoNovoPedido = false;
+                            });
                           }
                         }
                       },
@@ -307,6 +299,218 @@ class _DetalhesProdutosMesaScreenState extends State<DetalhesProdutosMesaScreen>
           ),
         );
       },
+    );
+  }
+
+  /// Barra de ferramentas com informações da mesa/comanda
+  Widget _buildBarraFerramentas(AdaptiveLayoutProvider adaptive) {
+    final statusExibido = _provider.statusVisual;
+    final statusColor = StatusUtils.getStatusColor(statusExibido, widget.entidade.tipo);
+    
+    return ElevatedToolbarContainer(
+      padding: EdgeInsets.symmetric(
+        horizontal: adaptive.isMobile ? 12 : 16,
+        vertical: adaptive.isMobile ? 8 : 10,
+      ),
+      child: Row(
+        children: [
+          // Botão voltar (apenas mobile) - design único e padrão
+          if (adaptive.isMobile) ...[
+            _buildBackButton(adaptive),
+            const SizedBox(width: 8),
+          ],
+          
+          // Badge compacto com identificação da mesa/comanda
+          _buildMesaBadge(adaptive, statusExibido, statusColor),
+          
+          const Spacer(),
+          
+          // Botão de atualizar (padrão igual área de mesas)
+          _buildRefreshButton(adaptive),
+        ],
+      ),
+    );
+  }
+  
+  /// Botão voltar padrão único do sistema (apenas mobile)
+  Widget _buildBackButton(AdaptiveLayoutProvider adaptive) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => Navigator.of(context).pop(),
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppTheme.primaryColor.withOpacity(0.15),
+                AppTheme.primaryColor.withOpacity(0.08),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: AppTheme.primaryColor.withOpacity(0.3),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: AppTheme.primaryColor.withOpacity(0.1),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Icon(
+            Icons.arrow_back_ios_new_rounded,
+            size: 18,
+            color: AppTheme.primaryColor,
+          ),
+        ),
+      ),
+    );
+  }
+  
+  /// Badge compacto com identificação da mesa/comanda
+  Widget _buildMesaBadge(
+    AdaptiveLayoutProvider adaptive,
+    String statusExibido,
+    Color statusColor,
+  ) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: adaptive.isMobile ? 10 : 12,
+        vertical: adaptive.isMobile ? 10 : 12, // Mesmo padding dos botões
+      ),
+      decoration: BoxDecoration(
+        color: AppTheme.primaryColor.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(adaptive.isMobile ? 10 : 12),
+        border: Border.all(
+          color: AppTheme.primaryColor.withOpacity(0.25),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Ícone da mesa/comanda
+          Icon(
+            widget.entidade.tipo == TipoEntidade.mesa 
+                ? Icons.table_restaurant_rounded
+                : Icons.receipt_long_rounded,
+            size: 16,
+            color: AppTheme.primaryColor,
+          ),
+          const SizedBox(width: 8),
+          // Nome (sem "Mesa" ou "Comanda")
+          Text(
+            widget.entidade.numero,
+            style: GoogleFonts.inter(
+              fontSize: adaptive.isMobile ? 13 : 14,
+              fontWeight: FontWeight.w700,
+              color: AppTheme.textPrimary,
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Badge de status compacto
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: statusColor.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: statusColor.withOpacity(0.4),
+                width: 1,
+              ),
+            ),
+            child: Text(
+              statusExibido,
+              style: GoogleFonts.inter(
+                fontSize: 9,
+                fontWeight: FontWeight.w600,
+                color: statusColor,
+              ),
+            ),
+          ),
+          // Indicadores de status compactos
+          if (_provider.estaSincronizando) ...[
+            const SizedBox(width: 6),
+            SizedBox(
+              width: 10,
+              height: 10,
+              child: CircularProgressIndicator(
+                strokeWidth: 1.5,
+                valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryColor),
+              ),
+            ),
+          ],
+          if (_provider.temErros) ...[
+            const SizedBox(width: 6),
+            Icon(
+              Icons.error_outline,
+              size: 12,
+              color: AppTheme.errorColor,
+            ),
+          ],
+          if (_provider.pedidosPendentes > 0 && !_provider.estaSincronizando && !_provider.temErros) ...[
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              decoration: BoxDecoration(
+                color: AppTheme.warningColor.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                '${_provider.pedidosPendentes}',
+                style: GoogleFonts.inter(
+                  fontSize: 8,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.warningColor,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+  
+  /// Botão de atualizar (padrão igual área de mesas)
+  Widget _buildRefreshButton(AdaptiveLayoutProvider adaptive) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _provider.loadProdutos(refresh: true),
+        borderRadius: BorderRadius.circular(adaptive.isMobile ? 10 : 12),
+        child: Tooltip(
+          message: 'Atualizar',
+          child: Container(
+            padding: EdgeInsets.all(adaptive.isMobile ? 10 : 12),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(adaptive.isMobile ? 10 : 12),
+              border: Border.all(
+                color: Colors.grey.shade300,
+                width: 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.02),
+                  blurRadius: 4,
+                  offset: const Offset(0, 1),
+                ),
+              ],
+            ),
+            child: Icon(
+              Icons.refresh_rounded,
+              color: AppTheme.textPrimary,
+              size: adaptive.isMobile ? 20 : 22,
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -332,10 +536,9 @@ class _DetalhesProdutosMesaScreenState extends State<DetalhesProdutosMesaScreen>
     }
 
     // Se controle é por comanda:
-    // - Se está na visão geral (null), não mostra botões
-    // - Se está em uma comanda específica, mostra botões se tiver produtos (venda pode ser null se ainda não foi criada)
+    // - Sempre mostra botões se houver aba selecionada e produtos
     if (_provider.abaSelecionada == null) {
-      return false; // Visão geral não permite pagamento
+      return false; // Sem aba selecionada, não mostra botões
     }
 
     final produtos = _provider.getProdutosParaAcao();
@@ -355,59 +558,45 @@ class _DetalhesProdutosMesaScreenState extends State<DetalhesProdutosMesaScreen>
 
   /// Calcula pagamentos e valor pago baseado no contexto atual (comanda selecionada ou visão geral)
   _PagamentosCalculados _calcularPagamentos() {
-                            List<PagamentoVendaDto> pagamentos = [];
+    List<PagamentoVendaDto> pagamentos = [];
     double valorPago = 0.0;
+    
+    // Verifica se a aba selecionada é "Sem Comanda"
+    final isAbaSemComanda = _provider.abaSelecionada == MesaDetalhesProvider.semComandaId;
                             
-    if (_provider.abaSelecionada != null) {
-      // Se há aba selecionada, busca pagamentos da comanda específica
+    if (_provider.abaSelecionada != null && !isAbaSemComanda) {
+      // Se há aba selecionada (comanda específica), busca pagamentos da comanda
       final comanda = _provider.comandasDaMesa.firstWhere(
         (c) => c.comanda.id == _provider.abaSelecionada,
-        orElse: () => _provider.comandasDaMesa.first,
-                              );
-                              if (comanda.comanda.pagamentos.isNotEmpty) {
-                                pagamentos = comanda.comanda.pagamentos;
-                              } else if (comanda.venda?.pagamentos.isNotEmpty == true) {
-                                pagamentos = comanda.venda!.pagamentos;
-                              }
+        orElse: () => _provider.comandasDaMesa.isNotEmpty 
+            ? _provider.comandasDaMesa.first 
+            : throw StateError('Nenhuma comanda encontrada'),
+      );
+      if (comanda.comanda.pagamentos.isNotEmpty) {
+        pagamentos = comanda.comanda.pagamentos;
+      } else if (comanda.venda?.pagamentos.isNotEmpty == true) {
+        pagamentos = comanda.venda!.pagamentos;
+      }
       // Calcula valor pago da comanda específica
-                              valorPago = pagamentos
-                                  .where((p) => p.status == 2 && !p.isCancelado) // StatusPagamento.Confirmado = 2
-                                  .fold(0.0, (sum, p) => sum + p.valor);
-                            } else if (widget.entidade.tipo == TipoEntidade.comanda) {
+      valorPago = pagamentos
+          .where((p) => p.status == 2 && !p.isCancelado) // StatusPagamento.Confirmado = 2
+          .fold(0.0, (sum, p) => sum + p.valor);
+    } else if (isAbaSemComanda) {
+      // Se está na aba "Sem Comanda", busca pagamentos da venda sem comanda
+      final venda = _provider.getVendaParaAcao();
+      if (venda?.pagamentos.isNotEmpty == true) {
+        pagamentos = venda!.pagamentos;
+        valorPago = venda.totalPago;
+      }
+    } else if (widget.entidade.tipo == TipoEntidade.comanda) {
       // Se entidade é comanda diretamente, busca da venda
       final venda = _provider.getVendaParaAcao();
-                              if (venda?.pagamentos.isNotEmpty == true) {
-                                pagamentos = venda!.pagamentos;
-                                valorPago = venda.totalPago;
-                              }
-                            } else {
-      // Visão geral (mesa com múltiplas comandas ou mesa sem controle por comanda)
-      if (_configuracaoRestaurante != null && _configuracaoRestaurante!.controlePorComanda && _provider.comandasDaMesa.isNotEmpty) {
-        // Se controle é por comanda, soma pagamentos de todas as comandas
-        for (final comandaData in _provider.comandasDaMesa) {
-                                  List<PagamentoVendaDto> pagamentosComanda = [];
-                                  if (comandaData.comanda.pagamentos.isNotEmpty) {
-                                    pagamentosComanda = comandaData.comanda.pagamentos;
-                                  } else if (comandaData.venda?.pagamentos.isNotEmpty == true) {
-                                    pagamentosComanda = comandaData.venda!.pagamentos;
-                                  }
-                                  pagamentos.addAll(pagamentosComanda);
-                                }
-        // Calcula valor pago total de todas as comandas
-                                valorPago = pagamentos
-                                    .where((p) => p.status == 2 && !p.isCancelado) // StatusPagamento.Confirmado = 2
-                                    .fold(0.0, (sum, p) => sum + p.valor);
-      } else {
-        // Mesa sem controle por comanda, usa venda da mesa
-        final venda = _provider.getVendaParaAcao();
-        if (venda != null) {
-                                if (venda.pagamentos.isNotEmpty) {
-                                  pagamentos = venda.pagamentos;
-                                }
-                                valorPago = venda.totalPago;
-                              }
-                            }
+      if (venda?.pagamentos.isNotEmpty == true) {
+        pagamentos = venda!.pagamentos;
+        valorPago = venda.totalPago;
+      }
     }
+    // Não há mais "visão geral" - sempre trabalha com aba selecionada
     
     return _PagamentosCalculados(
       pagamentos: pagamentos,
@@ -500,14 +689,11 @@ class _DetalhesProdutosMesaScreenState extends State<DetalhesProdutosMesaScreen>
       return;
     }
 
-    // Validação: se controle é por comanda e está na visão geral, bloqueia
-    if (widget.entidade.tipo == TipoEntidade.mesa && 
-        _configuracaoRestaurante != null && 
-        _configuracaoRestaurante!.controlePorComanda &&
-        _provider.abaSelecionada == null) {
+    // Validação: sempre precisa ter uma aba selecionada
+    if (_provider.abaSelecionada == null) {
       AppToast.showError(
         context, 
-        'Selecione uma comanda específica para realizar o pagamento.'
+        'Selecione uma aba para realizar o pagamento.'
       );
       return;
     }
@@ -607,16 +793,7 @@ class _DetalhesProdutosMesaScreenState extends State<DetalhesProdutosMesaScreen>
         debugPrint('   entidade.tipo: ${widget.entidade.tipo}');
         debugPrint('   entidade.id: ${widget.entidade.id}');
         
-        // Marca venda como finalizada de forma SÍNCRONA antes de disparar evento
-        // Se tem comandaId, remove apenas aquela comanda. Se não, limpa tudo.
-        // O método marcarVendaFinalizada() já verifica se pode liberar a mesa e dispara mesaLiberada internamente
-        _provider.marcarVendaFinalizada(
-          comandaId: comandaIdParaFinalizacao,
-          mesaId: mesaIdParaEvento,
-        );
-        
-        // Dispara evento de venda finalizada (para outros providers/listeners)
-        // O provider já limpou tudo localmente acima (sem ir no servidor)
+        // Dispara evento de venda finalizada primeiro (para outros providers/listeners)
         if (mesaIdParaEvento != null) {
           debugPrint('📢 [DetalhesProdutosMesaScreen] Disparando evento vendaFinalizada');
           AppEventBus.instance.dispararVendaFinalizada(
@@ -624,11 +801,15 @@ class _DetalhesProdutosMesaScreenState extends State<DetalhesProdutosMesaScreen>
             mesaId: mesaIdParaEvento,
             comandaId: comandaIdParaFinalizacao,
           );
-        } else {
-          debugPrint('⚠️ [DetalhesProdutosMesaScreen] Não foi possível determinar mesaId, não disparando evento vendaFinalizada');
         }
         
-        // NÃO recarrega dados do servidor - o provider já limpou tudo localmente acima
+        // Marca venda como finalizada e recarrega dados da mesa completamente
+        // O método marcarVendaFinalizada() recarrega do servidor e verifica se ainda há vendas abertas
+        // Só libera a mesa se não houver nenhuma venda aberta após recarregar
+        await _provider.marcarVendaFinalizada(
+          comandaId: comandaIdParaFinalizacao,
+          mesaId: mesaIdParaEvento,
+        );
       } else {
         AppToast.showError(context, response.message ?? 'Erro ao finalizar venda');
       }
@@ -641,31 +822,81 @@ class _DetalhesProdutosMesaScreenState extends State<DetalhesProdutosMesaScreen>
 
   /// Conteúdo das abas ou lista de produtos normal
   Widget _buildConteudoAbas(AdaptiveLayoutProvider adaptive) {
-    // Se não é mesa com controle por comanda, mostra lista normal
-    if (widget.entidade.tipo != TipoEntidade.mesa ||
-        _configuracaoRestaurante == null ||
-        !_configuracaoRestaurante!.controlePorComanda) {
+    // Se não é mesa, mostra lista normal
+    if (widget.entidade.tipo != TipoEntidade.mesa) {
       return Container(
         color: Colors.white,
         child: _buildListaProdutos(adaptive),
       );
     }
 
-    // Para mesa com controle por comanda, mostra seletor de visualização integrado
-    // NOTA: Comandas são carregadas automaticamente dentro de _loadProdutos() quando controle é por comanda
-    // Não precisa chamar _loadComandasDaMesa() aqui para evitar chamada duplicada
+    // IMPORTANTE: Verifica se está carregando ANTES de verificar se tem dados
+    // Não deve mostrar "nenhum pedido" se ainda está carregando
+    if (_provider.isLoading || _provider.carregandoProdutos) {
+      return Container(
+        color: Colors.white,
+        child: const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
 
+    // Para mesa: SEMPRE verifica se há comandas OU produtos sem comanda
+    // Se houver comandas ou produtos sem comanda, mostra abas; se não houver, mostra lista vazia
+    final temComandas = _provider.comandasDaMesa.isNotEmpty;
+    final temProdutosSemComanda = _provider.temProdutosSemComanda;
+    
+    if (!temComandas && !temProdutosSemComanda) {
+      // Sem comandas e sem produtos sem comanda: mostra lista vazia
+      // Só mostra esta mensagem se JÁ terminou de carregar (verificado acima)
+      return Container(
+        color: Colors.white,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.receipt_long_outlined,
+                size: 64,
+                color: Colors.grey.shade400,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Nenhum pedido encontrado',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Com comandas ou produtos sem comanda: mostra seletor de visualização integrado (abas)
     return Container(
       color: Colors.white,
       child: Column(
       children: [
         // Seletor de visualização (tabs integradas)
         _buildSeletorVisualizacao(adaptive),
-        // Conteúdo da visualização selecionada
+        // Conteúdo da visualização selecionada (sempre mostra produtos da aba selecionada)
         Expanded(
-            child: _provider.abaSelecionada == null
-                ? _buildListaProdutos(adaptive) // Visão Geral: produtos agrupados
-                : _buildListaProdutosPorComanda(adaptive, _provider.abaSelecionada!), // Comanda específica
+            child: _provider.abaSelecionada != null
+                ? _buildListaProdutosPorComanda(adaptive, _provider.abaSelecionada!)
+                : Container(
+                    color: Colors.white,
+                    child: Center(
+                      child: Text(
+                        'Selecione uma aba',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ),
+                  ),
         ),
       ],
       ),
@@ -674,23 +905,34 @@ class _DetalhesProdutosMesaScreenState extends State<DetalhesProdutosMesaScreen>
 
   /// Seletor de visualização integrado (substitui tabs do cabeçalho)
   Widget _buildSeletorVisualizacao(AdaptiveLayoutProvider adaptive) {
+    final tabs = <TabData>[];
+    
+    // Adiciona aba "Mesa" primeiro se houver produtos sem comanda
+    if (_provider.temProdutosSemComanda) {
+      tabs.add(
+        TabData(
+          comandaId: MesaDetalhesProvider.semComandaId,
+          label: 'Mesa',
+          icon: Icons.table_restaurant,
+        ),
+      );
+    }
+    
+    // Adiciona abas das comandas
+    tabs.addAll(
+      _provider.comandasDaMesa.map((comandaData) {
+        final comanda = comandaData.comanda;
+        return TabData(
+          comandaId: comanda.id,
+          label: 'Comanda ${comanda.numero}',
+          icon: Icons.receipt_long,
+        );
+      }),
+    );
+    
     return TabsScrollableWidget(
       adaptive: adaptive,
-      tabs: [
-        TabData(
-          comandaId: null,
-          label: 'Visão Geral',
-          icon: Icons.view_list,
-        ),
-        ..._provider.comandasDaMesa.map((comandaData) {
-          final comanda = comandaData.comanda;
-          return TabData(
-            comandaId: comanda.id,
-            label: 'Comanda ${comanda.numero}',
-            icon: Icons.receipt_long,
-          );
-        }),
-      ],
+      tabs: tabs,
       selectedTab: _provider.abaSelecionada,
       onTabSelected: (comandaId) {
         _provider.setAbaSelecionada(comandaId);
@@ -752,39 +994,128 @@ class _DetalhesProdutosMesaScreenState extends State<DetalhesProdutosMesaScreen>
     );
   }
 
-  /// Lista de produtos (visão geral)
-  Widget _buildListaProdutos(AdaptiveLayoutProvider adaptive) {
-    return _provider.errorMessage != null
-        ? Container(
-            color: Colors.white,
-            child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(
-                  Icons.error_outline,
-                  size: 64,
+  /// Widget de erro bonito e amigável
+  Widget _buildErrorWidget(AdaptiveLayoutProvider adaptive) {
+    final isConnectionError = _isConnectionError(_provider.errorMessage ?? '');
+    
+    return Container(
+      color: Colors.white,
+      padding: EdgeInsets.all(adaptive.isMobile ? 24 : 32),
+      child: Center(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Ícone grande e bonito
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: AppTheme.errorColor.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  isConnectionError ? Icons.wifi_off_rounded : Icons.error_outline_rounded,
+                  size: adaptive.isMobile ? 72 : 80,
                   color: AppTheme.errorColor,
                 ),
-                const SizedBox(height: 16),
-                Text(
-                    _provider.errorMessage!,
+              ),
+              const SizedBox(height: 32),
+              
+              // Título
+              Text(
+                isConnectionError 
+                    ? 'Erro de Comunicação'
+                    : 'Ops! Algo deu errado',
+                style: GoogleFonts.inter(
+                  fontSize: adaptive.isMobile ? 24 : 28,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.textPrimary,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              
+              // Mensagem amigável
+              Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: adaptive.isMobile ? 16 : 32,
+                ),
+                child: Text(
+                  isConnectionError
+                      ? 'Não foi possível conectar ao servidor. Verifique sua conexão com a internet e tente novamente.'
+                      : 'Não foi possível carregar os produtos. Por favor, tente novamente.',
                   style: GoogleFonts.inter(
-                    fontSize: 16,
+                    fontSize: adaptive.isMobile ? 15 : 16,
+                    fontWeight: FontWeight.w400,
                     color: AppTheme.textSecondary,
+                    height: 1.5,
                   ),
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 24),
-                ElevatedButton(
-                    onPressed: () => _provider.loadProdutos(refresh: true),
-                  child: const Text('Tentar novamente'),
+              ),
+              const SizedBox(height: 32),
+              
+              // Botão de tentar novamente estilizado
+              ElevatedButton.icon(
+                onPressed: _provider.isLoading 
+                    ? null 
+                    : () => _provider.loadProdutos(refresh: true),
+                icon: _provider.isLoading
+                    ? SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      )
+                    : const Icon(Icons.refresh_rounded),
+                label: Text(
+                  _provider.isLoading ? 'Carregando...' : 'Tentar novamente',
+                  style: GoogleFonts.inter(
+                    fontSize: adaptive.isMobile ? 15 : 16,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ],
-            ),
-            ),
-          )
-        : _provider.isLoading
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryColor,
+                  foregroundColor: Colors.white,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: adaptive.isMobile ? 32 : 40,
+                    vertical: adaptive.isMobile ? 16 : 18,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  elevation: 2,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+  
+  /// Verifica se o erro é relacionado a conexão/rede
+  bool _isConnectionError(String errorMessage) {
+    final lowerMessage = errorMessage.toLowerCase();
+    return lowerMessage.contains('connection') ||
+        lowerMessage.contains('conexão') ||
+        lowerMessage.contains('network') ||
+        lowerMessage.contains('rede') ||
+        lowerMessage.contains('timeout') ||
+        lowerMessage.contains('socket') ||
+        lowerMessage.contains('failed host lookup') ||
+        lowerMessage.contains('no internet') ||
+        lowerMessage.contains('sem internet');
+  }
+
+  /// Lista de produtos (visão geral)
+  Widget _buildListaProdutos(AdaptiveLayoutProvider adaptive) {
+    return _provider.errorMessage != null
+        ? _buildErrorWidget(adaptive)
+        : (_provider.isLoading || _provider.carregandoProdutos)
             ? Container(
                 color: Colors.white,
                 child: const Center(child: CircularProgressIndicator()),
@@ -838,10 +1169,22 @@ class _DetalhesProdutosMesaScreenState extends State<DetalhesProdutosMesaScreen>
 
   /// Lista de produtos filtrada por comanda específica
   Widget _buildListaProdutosPorComanda(AdaptiveLayoutProvider adaptive, String comandaId) {
+    // IMPORTANTE: Verifica se está carregando ANTES de verificar se tem produtos
+    // Não deve mostrar "nenhum produto" se ainda está carregando
+    if (_provider.isLoading || _provider.carregandoProdutos || _provider.carregandoComandas) {
+      return Container(
+        color: Colors.white,
+        child: const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+    
     // Busca os produtos da comanda específica
     final produtosComanda = _provider.produtosPorComanda[comandaId] ?? [];
     
     if (produtosComanda.isEmpty) {
+      // Só mostra esta mensagem se JÁ terminou de carregar (verificado acima)
       return Container(
         color: Colors.white,
         child: Center(

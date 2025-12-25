@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/widgets/app_toast.dart';
+import '../../../../core/utils/image_url_helper.dart';
 import '../../../../presentation/providers/pedido_provider.dart';
 import '../../../../presentation/providers/services_provider.dart';
 import '../../../../data/models/local/item_pedido_local.dart';
@@ -78,7 +79,7 @@ class PedidoResumoPanel extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               'Nenhum item adicionado',
-              style: GoogleFonts.inter(
+              style: GoogleFonts.plusJakartaSans(
                 fontSize: 16,
                 fontWeight: FontWeight.w500,
                 color: Colors.grey.shade600,
@@ -87,7 +88,7 @@ class PedidoResumoPanel extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               'Selecione produtos para começar',
-              style: GoogleFonts.inter(
+              style: GoogleFonts.plusJakartaSans(
                 fontSize: 14,
                 color: Colors.grey.shade400,
               ),
@@ -100,7 +101,7 @@ class PedidoResumoPanel extends StatelessWidget {
 
   Widget _buildHeader(PedidoProvider pedidoProvider) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: AppTheme.primaryColor,
         borderRadius: const BorderRadius.only(
@@ -108,50 +109,65 @@ class PedidoResumoPanel extends StatelessWidget {
           bottomRight: Radius.circular(16),
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Pedido',
-                style: GoogleFonts.inter(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-              if (onLimparPedido != null)
-                Builder(
-                  builder: (context) => IconButton(
-                    icon: const Icon(Icons.delete_outline, color: Colors.white),
-                    onPressed: () {
-                      _confirmarLimparPedido(context);
-                    },
-                    tooltip: 'Limpar pedido',
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Pedido',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                    letterSpacing: -0.3,
                   ),
                 ),
-            ],
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.shopping_cart,
+                      size: 14,
+                      color: Colors.white.withOpacity(0.9),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      '${pedidoProvider.quantidadeTotal} ${pedidoProvider.quantidadeTotal == 1 ? 'item' : 'itens'}',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        color: Colors.white.withOpacity(0.9),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Icon(
-                Icons.shopping_cart,
-                size: 16,
-                color: Colors.white.withOpacity(0.9),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                '${pedidoProvider.quantidadeTotal} ${pedidoProvider.quantidadeTotal == 1 ? 'item' : 'itens'}',
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  color: Colors.white.withOpacity(0.9),
+          if (onLimparPedido != null)
+            Builder(
+              builder: (context) => Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () {
+                    _confirmarLimparPedido(context);
+                  },
+                  borderRadius: BorderRadius.circular(20),
+                  child: Padding(
+                    padding: const EdgeInsets.all(6),
+                    child: Icon(
+                      Icons.delete_outline,
+                      size: 20,
+                      color: Colors.white.withOpacity(0.9),
+                    ),
+                  ),
                 ),
               ),
-            ],
-          ),
+            ),
         ],
       ),
     );
@@ -165,7 +181,7 @@ class PedidoResumoPanel extends StatelessWidget {
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       physics: const AlwaysScrollableScrollPhysics(),
       itemCount: itens.length,
       itemBuilder: (context, index) {
@@ -250,8 +266,28 @@ class PedidoResumoPanel extends StatelessWidget {
           }
         }
         
+        // Obter URL da imagem do produto
+        String? imagemUrl;
+        if (produto != null) {
+          if (item.produtoVariacaoId != null && produto.variacoes.isNotEmpty) {
+            try {
+              final variacao = produto.variacoes.firstWhere(
+                (v) => v.id == item.produtoVariacaoId,
+              );
+              if (variacao.imagemFileName != null && variacao.imagemFileName!.isNotEmpty) {
+                imagemUrl = ImageUrlHelper.getThumbnailImageUrl(variacao.imagemFileName);
+              }
+            } catch (e) {
+              // Variação não encontrada
+            }
+          }
+          if (imagemUrl == null && produto.imagemFileName != null && produto.imagemFileName!.isNotEmpty) {
+            imagemUrl = ImageUrlHelper.getThumbnailImageUrl(produto.imagemFileName);
+          }
+        }
+        
         return Padding(
-          padding: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.only(bottom: 8),
           child: GestureDetector(
             onTap: () {
               _editarItem(context, item);
@@ -259,29 +295,110 @@ class PedidoResumoPanel extends StatelessWidget {
             onLongPress: () {
               _confirmarRemoverItem(context, item, pedidoProvider);
             },
-            child: Card(
-              margin: EdgeInsets.zero,
-              elevation: 2,
-              shape: RoundedRectangleBorder(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Colors.grey.shade200,
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(10),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Cabeçalho do item
+                    // Cabeçalho do item com imagem
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // Imagem pequena como identificador
+                        if (imagemUrl != null)
+                          Container(
+                            width: 50,
+                            height: 50,
+                            margin: const EdgeInsets.only(right: 10),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: Colors.grey.shade200,
+                                width: 1,
+                              ),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.network(
+                                imagemUrl,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return Container(
+                                    color: Colors.grey.shade100,
+                                    child: Icon(
+                                      Icons.image_outlined,
+                                      size: 20,
+                                      color: Colors.grey.shade400,
+                                    ),
+                                  );
+                                },
+                                loadingBuilder: (context, child, loadingProgress) {
+                                  if (loadingProgress == null) return child;
+                                  return Container(
+                                    color: Colors.grey.shade100,
+                                    child: Center(
+                                      child: SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          value: loadingProgress.expectedTotalBytes != null
+                                              ? loadingProgress.cumulativeBytesLoaded /
+                                                  loadingProgress.expectedTotalBytes!
+                                              : null,
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          )
+                        else
+                          Container(
+                            width: 50,
+                            height: 50,
+                            margin: const EdgeInsets.only(right: 10),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade100,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: Colors.grey.shade200,
+                                width: 1,
+                              ),
+                            ),
+                            child: Icon(
+                              Icons.image_outlined,
+                              size: 20,
+                              color: Colors.grey.shade400,
+                            ),
+                          ),
+                        // Nome do produto e botões na mesma linha
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
-                                item.produtoVariacaoNome ?? item.produtoNome,
-                                style: GoogleFonts.inter(
-                                  fontSize: 16,
+                                item.produtoNome,
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 13,
                                   fontWeight: FontWeight.w600,
                                   color: Colors.grey.shade800,
                                 ),
@@ -289,49 +406,155 @@ class PedidoResumoPanel extends StatelessWidget {
                                 overflow: TextOverflow.ellipsis,
                               ),
                               if (item.produtoVariacaoNome != null) ...[
-                                const SizedBox(height: 4),
+                                const SizedBox(height: 2),
                                 Text(
-                                  item.produtoNome,
-                                  style: GoogleFonts.inter(
-                                    fontSize: 12,
+                                  item.produtoVariacaoNome!,
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 10,
                                     color: Colors.grey.shade600,
                                   ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ],
+                              // Botões de quantidade logo abaixo do nome
+                              const SizedBox(height: 6),
+                              Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade50,
+                                  border: Border.all(
+                                    color: Colors.grey.shade300,
+                                    width: 1,
+                                  ),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Material(
+                                      color: Colors.transparent,
+                                      child: InkWell(
+                                        onTap: () {
+                                          pedidoProvider.atualizarQuantidadeItem(
+                                            item.id,
+                                            item.quantidade - 1,
+                                          );
+                                        },
+                                        borderRadius: const BorderRadius.only(
+                                          topLeft: Radius.circular(10),
+                                          bottomLeft: Radius.circular(10),
+                                        ),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                          child: Icon(
+                                            Icons.remove,
+                                            size: 18,
+                                            color: Colors.grey.shade700,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        border: Border.symmetric(
+                                          vertical: BorderSide(
+                                            color: Colors.grey.shade300,
+                                            width: 1,
+                                          ),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        '${item.quantidade}',
+                                        style: GoogleFonts.plusJakartaSans(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.grey.shade800,
+                                        ),
+                                      ),
+                                    ),
+                                    Material(
+                                      color: Colors.transparent,
+                                      child: InkWell(
+                                        onTap: () {
+                                          pedidoProvider.atualizarQuantidadeItem(
+                                            item.id,
+                                            item.quantidade + 1,
+                                          );
+                                        },
+                                        borderRadius: const BorderRadius.only(
+                                          topRight: Radius.circular(10),
+                                          bottomRight: Radius.circular(10),
+                                        ),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                          child: Icon(
+                                            Icons.add,
+                                            size: 18,
+                                            color: Colors.grey.shade700,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ],
                           ),
                         ),
-                        IconButton(
-                          icon: Icon(
-                            Icons.close,
-                            size: 20,
-                            color: Colors.grey.shade400,
-                          ),
-                          onPressed: () {
-                            pedidoProvider.removerItem(item.id);
-                          },
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
+                        // Botão remover e total na vertical
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: () {
+                                  _confirmarRemoverItem(context, item, pedidoProvider);
+                                },
+                                borderRadius: BorderRadius.circular(20),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(4),
+                                  child: Icon(
+                                    Icons.close,
+                                    size: 16,
+                                    color: Colors.grey.shade500,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'R\$ ${item.precoTotal.toStringAsFixed(2)}',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: AppTheme.primaryColor,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
                     
                     // Atributos selecionados
                     if (atributosSelecionados.isNotEmpty) ...[
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 8),
                       Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
+                        spacing: 6,
+                        runSpacing: 4,
                         children: atributosSelecionados.map((atributoInfo) {
                           final nomeAtributo = atributoInfo['nomeAtributo'] as String;
                           final nomesValores = atributoInfo['nomesValores'] as List<String>;
                           final proporcoes = atributoInfo['proporcoes'] as List<double>?;
                           
                           return Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
                               color: AppTheme.primaryColor.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(6),
                               border: Border.all(
                                 color: AppTheme.primaryColor.withOpacity(0.3),
                                 width: 1,
@@ -342,8 +565,8 @@ class PedidoResumoPanel extends StatelessWidget {
                               children: [
                                 Text(
                                   '$nomeAtributo: ',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 12,
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 10,
                                     fontWeight: FontWeight.w600,
                                     color: AppTheme.primaryColor,
                                   ),
@@ -360,8 +583,8 @@ class PedidoResumoPanel extends StatelessWidget {
                                                 : nome;
                                           }).join(', ')
                                         : nomesValores.join(', '),
-                                    style: GoogleFonts.inter(
-                                      fontSize: 12,
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 10,
                                       color: Colors.grey.shade700,
                                     ),
                                   ),
@@ -376,12 +599,12 @@ class PedidoResumoPanel extends StatelessWidget {
                     // Componentes removidos e observações
                     if (nomesComponentesRemovidos.isNotEmpty ||
                         (item.observacoes != null && item.observacoes!.isNotEmpty)) ...[
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 8),
                       Container(
-                        padding: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
                           color: Colors.grey.shade50,
-                          borderRadius: BorderRadius.circular(10),
+                          borderRadius: BorderRadius.circular(8),
                           border: Border.all(
                             color: (nomesComponentesRemovidos.isNotEmpty ||
                                     (item.observacoes != null && item.observacoes!.isNotEmpty))
@@ -400,42 +623,42 @@ class PedidoResumoPanel extends StatelessWidget {
                                 children: [
                                   Icon(
                                     Icons.remove_circle_outline,
-                                    size: 16,
+                                    size: 14,
                                     color: Colors.orange.shade700,
                                   ),
-                                  const SizedBox(width: 8),
+                                  const SizedBox(width: 6),
                                   Expanded(
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         Text(
                                           'Removido${nomesComponentesRemovidos.length == 1 ? '' : 's'}:',
-                                          style: GoogleFonts.inter(
-                                            fontSize: 12,
+                                          style: GoogleFonts.plusJakartaSans(
+                                            fontSize: 10,
                                             fontWeight: FontWeight.w600,
                                             color: Colors.orange.shade700,
                                           ),
                                         ),
-                                        const SizedBox(height: 4),
+                                        const SizedBox(height: 3),
                                         ...nomesComponentesRemovidos.map((nome) {
                                           return Padding(
                                             padding: const EdgeInsets.only(bottom: 2),
                                             child: Row(
                                               children: [
                                                 Container(
-                                                  width: 4,
-                                                  height: 4,
+                                                  width: 3,
+                                                  height: 3,
                                                   decoration: BoxDecoration(
                                                     color: Colors.orange.shade700,
                                                     shape: BoxShape.circle,
                                                   ),
                                                 ),
-                                                const SizedBox(width: 6),
+                                                const SizedBox(width: 4),
                                                 Expanded(
                                                   child: Text(
                                                     nome,
-                                                    style: GoogleFonts.inter(
-                                                      fontSize: 12,
+                                                    style: GoogleFonts.plusJakartaSans(
+                                                      fontSize: 10,
                                                       color: Colors.grey.shade800,
                                                       decoration: TextDecoration.lineThrough,
                                                     ),
@@ -453,7 +676,7 @@ class PedidoResumoPanel extends StatelessWidget {
                                 ],
                               ),
                               if (item.observacoes != null && item.observacoes!.isNotEmpty)
-                                const SizedBox(height: 12),
+                                const SizedBox(height: 8),
                             ],
 
                             // Observação
@@ -463,31 +686,31 @@ class PedidoResumoPanel extends StatelessWidget {
                                 children: [
                                   Icon(
                                     Icons.note_outlined,
-                                    size: 16,
+                                    size: 14,
                                     color: Colors.blue.shade700,
                                   ),
-                                  const SizedBox(width: 8),
+                                  const SizedBox(width: 6),
                                   Expanded(
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         Text(
                                           'Observação:',
-                                          style: GoogleFonts.inter(
-                                            fontSize: 12,
+                                          style: GoogleFonts.plusJakartaSans(
+                                            fontSize: 10,
                                             fontWeight: FontWeight.w600,
                                             color: Colors.blue.shade700,
                                           ),
                                         ),
-                                        const SizedBox(height: 4),
+                                        const SizedBox(height: 3),
                                         Text(
                                           item.observacoes!,
-                                          style: GoogleFonts.inter(
-                                            fontSize: 12,
+                                          style: GoogleFonts.plusJakartaSans(
+                                            fontSize: 10,
                                             color: Colors.grey.shade800,
-                                            height: 1.4,
+                                            height: 1.3,
                                           ),
-                                          maxLines: 3,
+                                          maxLines: 2,
                                           overflow: TextOverflow.ellipsis,
                                         ),
                                       ],
@@ -501,66 +724,6 @@ class PedidoResumoPanel extends StatelessWidget {
                       ),
                     ],
 
-                    // Rodapé com quantidade e preço
-                    const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        // Controle de quantidade
-                        Container(
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.grey.shade300),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.remove, size: 18),
-                                onPressed: () {
-                                  pedidoProvider.atualizarQuantidadeItem(
-                                    item.id,
-                                    item.quantidade - 1,
-                                  );
-                                },
-                                padding: const EdgeInsets.all(8),
-                                constraints: const BoxConstraints(),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12),
-                                child: Text(
-                                  '${item.quantidade}',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.add, size: 18),
-                                onPressed: () {
-                                  pedidoProvider.atualizarQuantidadeItem(
-                                    item.id,
-                                    item.quantidade + 1,
-                                  );
-                                },
-                                padding: const EdgeInsets.all(8),
-                                constraints: const BoxConstraints(),
-                              ),
-                            ],
-                          ),
-                        ),
-                        // Preço total do item
-                        Text(
-                          'R\$ ${item.precoTotal.toStringAsFixed(2)}',
-                          style: GoogleFonts.inter(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.primaryColor,
-                          ),
-                        ),
-                      ],
-                    ),
                     ],
                 ),
               ),
@@ -572,10 +735,14 @@ class PedidoResumoPanel extends StatelessWidget {
   }
 
   void _confirmarRemoverItem(BuildContext context, ItemPedidoLocal item, PedidoProvider pedidoProvider) {
+    final nomeProduto = item.produtoVariacaoNome != null 
+        ? '${item.produtoNome} - ${item.produtoVariacaoNome}'
+        : item.produtoNome;
+    
     AppDialog.showConfirm(
       context: context,
       title: 'Remover item?',
-      message: 'Tem certeza que deseja remover "${item.produtoVariacaoNome ?? item.produtoNome}" do pedido?',
+      message: 'Tem certeza que deseja remover "$nomeProduto" do pedido?',
       confirmText: 'Remover',
       cancelText: 'Cancelar',
       icon: Icons.delete_outline,
@@ -585,7 +752,7 @@ class PedidoResumoPanel extends StatelessWidget {
         pedidoProvider.removerItem(item.id);
         AppToast.showSuccess(
           context,
-          '${item.produtoVariacaoNome ?? item.produtoNome} removido do pedido',
+          '$nomeProduto removido do pedido',
         );
       }
     });
@@ -593,7 +760,7 @@ class PedidoResumoPanel extends StatelessWidget {
 
   Widget _buildFooter(PedidoProvider pedidoProvider) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.grey.shade50,
         border: Border(
@@ -608,16 +775,16 @@ class PedidoResumoPanel extends StatelessWidget {
             children: [
               Text(
                 'Total',
-                style: GoogleFonts.inter(
-                  fontSize: 20,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 16,
                   fontWeight: FontWeight.bold,
                   color: Colors.grey.shade800,
                 ),
               ),
               Text(
                 'R\$ ${pedidoProvider.total.toStringAsFixed(2)}',
-                style: GoogleFonts.inter(
-                  fontSize: 24,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 18,
                   fontWeight: FontWeight.bold,
                   color: AppTheme.primaryColor,
                 ),
@@ -641,8 +808,8 @@ class PedidoResumoPanel extends StatelessWidget {
               ),
               child: Text(
                 'Finalizar Pedido',
-                style: GoogleFonts.inter(
-                  fontSize: 16,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 15,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -654,11 +821,23 @@ class PedidoResumoPanel extends StatelessWidget {
   }
 
   void _confirmarLimparPedido(BuildContext context) {
-    Provider.of<PedidoProvider>(context, listen: false).limparPedido();
-    AppToast.showSuccess(
-      context,
-      'Pedido limpo',
-    );
+    AppDialog.showConfirm(
+      context: context,
+      title: 'Limpar pedido?',
+      message: 'Tem certeza que deseja limpar todo o pedido? Esta ação não pode ser desfeita.',
+      confirmText: 'Limpar',
+      cancelText: 'Cancelar',
+      icon: Icons.delete_outline,
+      iconColor: Colors.red,
+    ).then((confirmado) {
+      if (confirmado == true && context.mounted) {
+        Provider.of<PedidoProvider>(context, listen: false).limparPedido();
+        AppToast.showSuccess(
+          context,
+          'Pedido limpo',
+        );
+      }
+    });
   }
 
   void _editarItem(BuildContext context, ItemPedidoLocal item) {

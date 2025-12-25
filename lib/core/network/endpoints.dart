@@ -38,4 +38,5 @@ class ApiEndpoints {
   // Sincronização PDV
   static const String syncProdutos = '/produto-pdv-sync/produtos';
   static const String syncGruposExibicao = '/produto-pdv-sync/grupos-exibicao';
+  static const String syncMesasComandas = '/pdv-sync/mesas-comandas';
 }

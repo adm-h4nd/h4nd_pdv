@@ -58,13 +58,19 @@ class MesaDetalhesProvider extends ChangeNotifier {
   VendaDto? _vendaAtual;
 
   // Controle de abas (apenas quando controle é por comanda e é mesa)
-  String? _abaSelecionada; // null = Visão Geral, comandaId = comanda específica
+  String? _abaSelecionada; // null = Visão Geral, comandaId = comanda específica, "_SEM_COMANDA" = Sem Comanda
+
+  // Constante para identificar aba "Sem Comanda"
+  static const String _SEM_COMANDA = "_SEM_COMANDA";
+  
+  // Getter público para a constante (usado pela tela)
+  static String get semComandaId => _SEM_COMANDA;
 
   // Dados das comandas da mesa
   List<ComandaComProdutos> _comandasDaMesa = [];
   bool _carregandoComandas = false;
-  Map<String, List<ProdutoAgrupado>> _produtosPorComanda = {}; // comandaId -> produtos
-  Map<String, VendaDto?> _vendasPorComanda = {}; // comandaId -> venda
+  Map<String, List<ProdutoAgrupado>> _produtosPorComanda = {}; // comandaId -> produtos (ou "_SEM_COMANDA" para sem comanda)
+  Map<String, VendaDto?> _vendasPorComanda = {}; // comandaId -> venda (ou "_SEM_COMANDA" para sem comanda)
 
   // Controle de expansão do histórico de pagamentos
   bool _historicoPagamentosExpandido = false;
@@ -126,21 +132,51 @@ class MesaDetalhesProvider extends ChangeNotifier {
     return _statusMesa ?? entidade.status;
   }
 
-  /// Retorna os produtos para ação (geral ou da comanda selecionada)
+  /// Retorna os produtos para ação (da aba selecionada)
   List<ProdutoAgrupado> getProdutosParaAcao() {
     if (_abaSelecionada == null) {
-      return _produtosAgrupados;
+      return [];
     }
     return _produtosPorComanda[_abaSelecionada] ?? [];
   }
 
-  /// Retorna a venda para ação (geral ou da comanda selecionada)
+  /// Retorna a venda para ação (da aba selecionada)
   VendaDto? getVendaParaAcao() {
     if (_abaSelecionada == null) {
-      return _vendaAtual;
+      return null;
     }
     return _vendasPorComanda[_abaSelecionada];
   }
+
+  /// Seleciona automaticamente a primeira aba disponível (Mesa ou primeira comanda)
+  void _selecionarPrimeiraAbaDisponivel() {
+    // Se já tem uma aba selecionada e ela ainda existe, mantém
+    if (_abaSelecionada != null) {
+      if (_abaSelecionada == _SEM_COMANDA && temProdutosSemComanda) {
+        return; // Aba "Mesa" ainda existe
+      }
+      if (_abaSelecionada != _SEM_COMANDA && 
+          _comandasDaMesa.any((c) => c.comanda.id == _abaSelecionada)) {
+        return; // Comanda selecionada ainda existe
+      }
+    }
+    
+    // Seleciona primeira aba disponível: Mesa primeiro, depois primeira comanda
+    if (temProdutosSemComanda) {
+      _abaSelecionada = _SEM_COMANDA;
+    } else if (_comandasDaMesa.isNotEmpty) {
+      _abaSelecionada = _comandasDaMesa.first.comanda.id;
+    } else {
+      _abaSelecionada = null;
+    }
+  }
+
+  /// Verifica se há produtos sem comanda (venda sem comanda)
+  bool get temProdutosSemComanda => _produtosPorComanda.containsKey(_SEM_COMANDA) && 
+                                     (_produtosPorComanda[_SEM_COMANDA]?.isNotEmpty ?? false);
+
+  /// Retorna a venda sem comanda (se houver)
+  VendaDto? get vendaSemComanda => _vendasPorComanda[_SEM_COMANDA];
 
 
   /// Define a aba selecionada
@@ -174,16 +210,15 @@ class MesaDetalhesProvider extends ChangeNotifier {
     final eventBus = AppEventBus.instance;
     
     // Escuta eventos de pedido criado (disparado pelo AutoSyncManager após salvar no Hive)
-    // ÚNICO evento que adiciona pedido à listagem local (sem ir ao servidor)
+    // Apenas marca mesa como sincronizando - produtos só aparecem após sincronização
     _eventBusSubscriptions.add(
       eventBus.on(TipoEvento.pedidoCriado).listen((evento) {
         if (_eventoPertenceAEstaEntidade(evento) && evento.pedidoId != null) {
           debugPrint('📢 [MesaDetalhesProvider] Evento: Pedido ${evento.pedidoId} criado');
           // Reseta flag de venda finalizada quando um novo pedido é criado
-          // Isso permite que a mesa volte a funcionar normalmente
           _vendaFinalizada = false;
-          // Adiciona pedido local à listagem (sem buscar no servidor)
-          _adicionarPedidoLocalAListagem(evento.pedidoId!);
+          // Apenas atualiza contadores - produtos só aparecem após sincronização
+          _recalcularContadoresPedidos();
         }
       }),
     );
@@ -203,14 +238,21 @@ class MesaDetalhesProvider extends ChangeNotifier {
     );
     
     // Escuta eventos de pedido sincronizado
-    // Apenas atualiza contadores, pedido já está na listagem local
+    // Recarrega dados do servidor e verifica se ainda há pedidos pendentes
     _eventBusSubscriptions.add(
-      eventBus.on(TipoEvento.pedidoSincronizado).listen((evento) {
+      eventBus.on(TipoEvento.pedidoSincronizado).listen((evento) async {
         if (_eventoPertenceAEstaEntidade(evento)) {
           debugPrint('📢 [MesaDetalhesProvider] Evento: Pedido ${evento.pedidoId} sincronizado');
+          
+          // Atualiza contadores
           if (_pedidosSincronizando > 0) _pedidosSincronizando--;
-          _atualizarStatusSincronizacao();
-          // NÃO recarrega produtos - pedido já está na listagem local
+          _recalcularContadoresPedidos();
+          
+          // Recarrega dados do servidor para incluir o pedido sincronizado
+          await loadProdutos(refresh: true);
+          
+          // Verifica se ainda há pedidos pendentes após sincronização
+          _recalcularContadoresPedidos();
         }
       }),
     );
@@ -230,13 +272,15 @@ class MesaDetalhesProvider extends ChangeNotifier {
     );
     
     // Escuta eventos de pedido removido
-    // Remove pedido da listagem local (sem buscar no servidor)
+    // Recarrega dados do servidor
     _eventBusSubscriptions.add(
-      eventBus.on(TipoEvento.pedidoRemovido).listen((evento) {
+      eventBus.on(TipoEvento.pedidoRemovido).listen((evento) async {
         if (_eventoPertenceAEstaEntidade(evento) && evento.pedidoId != null) {
           debugPrint('📢 [MesaDetalhesProvider] Evento: Pedido ${evento.pedidoId} removido');
-          // Remove pedido da listagem local
-          _removerPedidoLocalDaListagem(evento.pedidoId!);
+          // Atualiza contadores
+          _recalcularContadoresPedidos();
+          // Recarrega dados do servidor
+          await loadProdutos(refresh: true);
         }
       }),
     );
@@ -276,14 +320,16 @@ class MesaDetalhesProvider extends ChangeNotifier {
     );
     
     // Escuta eventos de venda finalizada
-    // Usa marcarVendaFinalizada() para garantir que o evento mesaLiberada seja disparado quando apropriado
+    // Escuta eventos de venda finalizada
+    // Recarrega dados da mesa e verifica se ainda há vendas abertas antes de liberar
     _eventBusSubscriptions.add(
-      eventBus.on(TipoEvento.vendaFinalizada).listen((evento) {
+      eventBus.on(TipoEvento.vendaFinalizada).listen((evento) async {
         if (_eventoPertenceAEstaEntidade(evento)) {
           debugPrint('📢 [MesaDetalhesProvider] Evento: Venda ${evento.vendaId} finalizada');
           
-          // Usa marcarVendaFinalizada() que já tem toda a lógica de verificar e disparar mesaLiberada
-          marcarVendaFinalizada(
+          // Recarrega dados da mesa e verifica se ainda há vendas abertas
+          // Só libera a mesa se não houver nenhuma venda aberta após recarregar
+          await marcarVendaFinalizada(
             comandaId: evento.comandaId,
             mesaId: evento.mesaId,
           );
@@ -292,21 +338,21 @@ class MesaDetalhesProvider extends ChangeNotifier {
     );
     
     // Escuta eventos de comanda paga
-    // Usa marcarVendaFinalizada() para garantir consistência e disparar mesaLiberada quando apropriado
+    // Recarrega dados da mesa e verifica se ainda há vendas abertas antes de liberar
     _eventBusSubscriptions.add(
-      eventBus.on(TipoEvento.comandaPaga).listen((evento) {
+      eventBus.on(TipoEvento.comandaPaga).listen((evento) async {
         if (_eventoPertenceAEstaEntidade(evento)) {
           debugPrint('📢 [MesaDetalhesProvider] Evento: Comanda ${evento.comandaId} paga');
           
-          // Se for a comanda atual (entidade é comanda), limpa tudo
+          // Se for a comanda atual (entidade é comanda), recarrega tudo
           if (entidade.tipo == TipoEntidade.comanda && evento.comandaId == entidade.id) {
-            marcarVendaFinalizada(
+            await marcarVendaFinalizada(
               comandaId: evento.comandaId,
               mesaId: evento.mesaId,
             );
           } else if (entidade.tipo == TipoEntidade.mesa && evento.comandaId != null) {
-            // Se for mesa, remove apenas a comanda específica e verifica se pode liberar
-            marcarVendaFinalizada(
+            // Se for mesa, recarrega e verifica se ainda há vendas abertas
+            await marcarVendaFinalizada(
               comandaId: evento.comandaId,
               mesaId: evento.mesaId ?? entidade.id,
             );
@@ -352,123 +398,8 @@ class MesaDetalhesProvider extends ChangeNotifier {
     debugPrint('✅ [MesaDetalhesProvider] Listeners de eventos configurados para ${entidade.tipo.name} ${entidade.id}');
   }
 
-  /// Adiciona um pedido local à listagem (sem buscar no servidor)
-  /// Busca o pedido do Hive e adiciona aos produtos/comandas existentes
-  /// Evita duplicação verificando se o pedido já foi processado
-  void _adicionarPedidoLocalAListagem(String pedidoId) {
-    try {
-      // Verifica se o pedido já foi processado (evita duplicação)
-      if (_pedidosProcessados.contains(pedidoId)) {
-        debugPrint('⚠️ [MesaDetalhesProvider] Pedido $pedidoId já foi processado, ignorando evento duplicado');
-        return;
-      }
-      
-      if (!Hive.isBoxOpen(PedidoLocalRepository.boxName)) {
-        debugPrint('⚠️ [MesaDetalhesProvider] Hive não está aberto, não é possível adicionar pedido');
-        return;
-      }
-      
-      final box = Hive.box<PedidoLocal>(PedidoLocalRepository.boxName);
-      final pedido = box.get(pedidoId);
-      
-      if (pedido == null) {
-        debugPrint('⚠️ [MesaDetalhesProvider] Pedido $pedidoId não encontrado no Hive');
-        return;
-      }
-      
-      // Verifica se pertence a esta entidade
-      final pertenceAEstaEntidade = (entidade.tipo == TipoEntidade.mesa && pedido.mesaId == entidade.id) ||
-          (entidade.tipo == TipoEntidade.comanda && pedido.comandaId == entidade.id);
-      
-      if (!pertenceAEstaEntidade) {
-        debugPrint('⚠️ [MesaDetalhesProvider] Pedido $pedidoId não pertence a esta entidade');
-        return;
-      }
-      
-      // Verifica se o pedido já está sincronizado (não deve adicionar novamente)
-      if (pedido.syncStatus == SyncStatusPedido.sincronizado) {
-        debugPrint('⚠️ [MesaDetalhesProvider] Pedido $pedidoId já está sincronizado, não adicionando novamente');
-        _pedidosProcessados.add(pedidoId); // Marca como processado
-        return;
-      }
-      
-      debugPrint('✅ [MesaDetalhesProvider] Adicionando pedido local $pedidoId à listagem');
-      
-      // Marca pedido como processado ANTES de adicionar (evita duplicação se evento for disparado novamente)
-      _pedidosProcessados.add(pedidoId);
-      
-      // Atualiza contadores
-      _recalcularContadoresPedidos();
-      
-      // Se controle é por comanda e é mesa
-      if (entidade.tipo == TipoEntidade.mesa && 
-          configuracaoRestaurante != null && 
-          configuracaoRestaurante!.controlePorComanda &&
-          pedido.comandaId != null) {
-        // Adiciona à comanda específica
-        _adicionarPedidoLocalAComanda(pedido);
-      } else {
-        // Adiciona à visão geral
-        _adicionarPedidoLocalAVisaoGeral(pedido);
-      }
-      
-      notifyListeners();
-    } catch (e) {
-      debugPrint('❌ [MesaDetalhesProvider] Erro ao adicionar pedido local: $e');
-    }
-  }
-  
-  /// Adiciona pedido local à visão geral (sem controle por comanda)
-  void _adicionarPedidoLocalAVisaoGeral(PedidoLocal pedido) {
-    // Converte produtos existentes para mapa
-    final produtosMap = _produtosParaMapa(_produtosAgrupados);
-    
-    // Processa itens do pedido local
-    _processarItensPedidoLocal(pedido, produtosMap);
-    
-    // Atualiza lista de produtos ordenada
-    _produtosAgrupados = _mapaParaProdutosOrdenados(produtosMap);
-  }
-  
-  /// Adiciona pedido local a uma comanda específica
-  void _adicionarPedidoLocalAComanda(PedidoLocal pedido) {
-    if (pedido.comandaId == null) return;
-    
-    final comandaId = pedido.comandaId!;
-    
-    // Se a comanda já existe na listagem
-    if (_produtosPorComanda.containsKey(comandaId)) {
-      // Converte produtos existentes para mapa
-      final produtosMap = _produtosParaMapa(_produtosPorComanda[comandaId]!);
-      
-      // Processa itens do pedido local
-      _processarItensPedidoLocal(pedido, produtosMap);
-      
-      // Atualiza lista de produtos da comanda
-      final produtosAtualizados = _mapaParaProdutosOrdenados(produtosMap);
-      _produtosPorComanda[comandaId] = produtosAtualizados;
-      
-      // Atualiza comanda na listagem usando índice otimizado
-      final indiceComandas = _criarIndiceComandas();
-      final comandaIndex = indiceComandas[comandaId];
-      if (comandaIndex != null) {
-        _comandasDaMesa[comandaIndex] = ComandaComProdutos(
-          comanda: _comandasDaMesa[comandaIndex].comanda,
-          produtos: produtosAtualizados,
-          venda: _comandasDaMesa[comandaIndex].venda,
-        );
-      }
-    } else {
-      // Cria comanda virtual com número real da comanda
-      final produtosMap = <String, ProdutoAgrupado>{};
-      _processarItensPedidoLocal(pedido, produtosMap);
-      
-      final produtos = _mapaParaProdutosOrdenados(produtosMap);
-      
-      // Busca número real da comanda do servidor (apenas uma vez)
-      _criarOuAtualizarComandaVirtual(comandaId, produtos, pedido.total);
-    }
-  }
+  // Métodos removidos: _adicionarPedidoLocalAListagem, _adicionarPedidoLocalAVisaoGeral, _adicionarPedidoLocalAComanda
+  // Produtos de pedidos locais não aparecem mais na mesa até serem sincronizados
   
   /// Cria ou atualiza uma comanda virtual com número real do servidor
   /// Método centralizado para evitar duplicação de lógica
@@ -574,27 +505,8 @@ class MesaDetalhesProvider extends ChangeNotifier {
     ));
   }
 
-  /// Remove um pedido local da listagem
-  /// Quando um pedido é removido do Hive, precisa recarregar do servidor
-  /// porque não sabemos quais produtos eram desse pedido específico
-  void _removerPedidoLocalDaListagem(String pedidoId) {
-    try {
-      debugPrint('🗑️ [MesaDetalhesProvider] Pedido local $pedidoId removido, recarregando do servidor');
-      
-      // Remove do rastreamento
-      _pedidosProcessados.remove(pedidoId);
-      
-      // Atualiza contadores
-      _recalcularContadoresPedidos();
-      
-      // Quando um pedido é removido, precisa recarregar do servidor
-      // porque não sabemos quais produtos eram desse pedido específico
-      // e precisamos manter os produtos do servidor
-      loadProdutos(refresh: true);
-    } catch (e) {
-      debugPrint('❌ [MesaDetalhesProvider] Erro ao remover pedido local: $e');
-    }
-  }
+  // Método removido: _removerPedidoLocalDaListagem
+  // Remoção de pedidos agora é tratada via evento que recarrega do servidor
 
   /// Recalcula contadores de pedidos locais
   void _recalcularContadoresPedidos() {
@@ -785,13 +697,8 @@ class MesaDetalhesProvider extends ChangeNotifier {
   }
 
   /// Busca pedidos do servidor para mesa ou comanda
-  /// Não vai no servidor se a venda foi finalizada
+  /// Busca pedidos do servidor
   Future<PedidosComVendaComandasDto?> _buscarPedidosServidor() async {
-    // Se a venda foi finalizada, não vai no servidor
-    if (_vendaFinalizada) {
-      debugPrint('ℹ️ [MesaDetalhesProvider] Venda já foi finalizada, não precisa buscar pedidos do servidor');
-      return null;
-    }
     
     debugPrint('🔍 [MesaDetalhesProvider] Buscando pedidos do servidor - Tipo: ${entidade.tipo}, ID: ${entidade.id}');
     debugPrint('   Status mesa: $_statusMesa, Produtos: ${_produtosAgrupados.length}, Comandas: ${_comandasDaMesa.length}, Venda: ${_vendaAtual != null}');
@@ -837,44 +744,15 @@ class MesaDetalhesProvider extends ChangeNotifier {
     }
   }
   
-  /// Busca pedidos locais pendentes/sincronizando filtrados
-  List<PedidoLocal> _buscarPedidosLocaisFiltrados() {
-    if (!Hive.isBoxOpen(PedidoLocalRepository.boxName)) {
-      return [];
-    }
-    
-    final box = Hive.box<PedidoLocal>(PedidoLocalRepository.boxName);
-    final todosPedidosLocais = _getPedidosLocais(box);
-    
-    // Filtra apenas pedidos pendentes ou sincronizando desta mesa/comanda
-    // E que ainda NÃO foram processados via evento pedidoCriado
-    final pedidosFiltrados = todosPedidosLocais.where((p) {
-      final pertenceAEstaEntidade = (entidade.tipo == TipoEntidade.mesa && p.mesaId == entidade.id) ||
-          (entidade.tipo == TipoEntidade.comanda && p.comandaId == entidade.id);
-      final estaPendenteOuSincronizando = p.syncStatus == SyncStatusPedido.pendente || 
-          p.syncStatus == SyncStatusPedido.sincronizando;
-      final jaFoiProcessado = _pedidosProcessados.contains(p.id);
-      // Só inclui se pertence à entidade, está pendente/sincronizando E ainda não foi processado
-      return pertenceAEstaEntidade && estaPendenteOuSincronizando && !jaFoiProcessado;
-    }).toList();
-    
-    debugPrint('📦 Pedidos locais pendentes/sincronizando encontrados: ${pedidosFiltrados.length} (já processados: ${_pedidosProcessados.length})');
-    
-    // Marca pedidos locais como processados (para evitar duplicação quando eventos chegarem)
-    for (final pedido in pedidosFiltrados) {
-      _pedidosProcessados.add(pedido.id);
-    }
-    
-    return pedidosFiltrados;
-  }
+  // Método removido: _buscarPedidosLocaisFiltrados
+  // Pedidos locais não são mais processados para exibição - apenas contadores são atualizados
 
   /// Carrega produtos agrupados
-  /// Não vai no servidor se a mesa já foi limpa (venda finalizada)
+  /// Se refresh=true, SEMPRE recarrega tudo do servidor sem verificações
+  /// IMPORTANTE: Não limpa comandas/produtos antes de buscar - só limpa quando novos dados chegarem
+  /// Isso garante que as abas não desapareçam durante o carregamento
   Future<void> loadProdutos({bool refresh = false}) async {
-    // Log para rastrear origem da chamada com stack trace
-    debugPrint('🔍 [MesaDetalhesProvider] loadProdutos chamado - refresh: $refresh, vendaFinalizada: $_vendaFinalizada, status: $_statusMesa');
-    // Stack trace para identificar origem da chamada
-    debugPrint('📍 Stack trace: ${StackTrace.current}');
+    debugPrint('🔍 [MesaDetalhesProvider] loadProdutos chamado - refresh: $refresh');
     
     // Evita múltiplas chamadas simultâneas (exceto quando é refresh explícito)
     if (_carregandoProdutos && !refresh) {
@@ -882,49 +760,13 @@ class MesaDetalhesProvider extends ChangeNotifier {
       return;
     }
 
-    // Se a venda foi finalizada, não vai no servidor (verificação prioritária)
-    if (_vendaFinalizada) {
-      debugPrint('ℹ️ [MesaDetalhesProvider] Venda já foi finalizada, não precisa buscar produtos do servidor');
-      _isLoading = false;
-      _carregandoProdutos = false;
-      notifyListeners();
-      return;
-    }
-
-    // Se a entidade (mesa/comanda) já está com status 'livre' e não é refresh manual, não vai no servidor
-    // Isso evita chamadas quando o widget é recriado após finalizar a venda
-    if (!refresh && entidade.status?.toLowerCase() == 'livre' && _produtosAgrupados.isEmpty && _comandasDaMesa.isEmpty) {
-      debugPrint('ℹ️ [MesaDetalhesProvider] Entidade já está livre e sem produtos, não precisa buscar produtos do servidor');
-      _isLoading = false;
-      _carregandoProdutos = false;
-      notifyListeners();
-      return;
-    }
-
-    // Se a mesa está limpa (sem produtos/comandas/venda e status livre), não vai no servidor
-    // porque já limpamos tudo localmente e não há mais produtos
-    // Também verifica se não há pedidos locais pendentes (indicando que mesa está realmente limpa)
-    final pedidosLocaisPendentes = _buscarPedidosLocaisFiltrados();
-    if (_produtosAgrupados.isEmpty && 
-        _comandasDaMesa.isEmpty && 
-        _vendaAtual == null && 
-        _statusMesa == 'livre' &&
-        pedidosLocaisPendentes.isEmpty) {
-      debugPrint('ℹ️ [MesaDetalhesProvider] Mesa já está limpa (venda finalizada), não precisa buscar produtos do servidor');
-      _isLoading = false;
-      _carregandoProdutos = false;
-      notifyListeners();
-      return;
-    }
-
+    // Se é refresh, limpa apenas flags e mensagens de erro
+    // NÃO limpa comandas/produtos ainda - só limpa quando novos dados chegarem do servidor
     if (refresh) {
+      debugPrint('🔄 Refresh completo: recarregando tudo do servidor');
       _errorMessage = null;
-      // Limpa rastreamento de pedidos processados quando recarrega do servidor
-      // Isso permite que pedidos sejam reprocessados se necessário
-      _pedidosProcessados.clear();
-      // Reseta flag de venda finalizada quando é refresh manual
-      // Permite recarregar dados do servidor se necessário
       _vendaFinalizada = false;
+      // NÃO limpa comandas/produtos aqui - serão limpos quando novos dados chegarem
     }
 
     _isLoading = true;
@@ -955,58 +797,45 @@ class MesaDetalhesProvider extends ChangeNotifier {
       // Busca venda aberta se necessário (apenas para comandas)
       await _buscarVendaAbertaSeNecessario();
       
-      // Se controle é por comanda, processa comandas usando dados já retornados
-      if (entidade.tipo == TipoEntidade.mesa &&
-          configuracaoRestaurante != null && 
-          configuracaoRestaurante!.controlePorComanda && 
-          resultadoCompleto.comandas != null) {
-        // Busca pedidos locais pendentes para incluir nas comandas
-        List<PedidoLocal> pedidosLocaisParaComandas = [];
-        if (Hive.isBoxOpen(PedidoLocalRepository.boxName)) {
-          final box = Hive.box<PedidoLocal>(PedidoLocalRepository.boxName);
-          pedidosLocaisParaComandas = box.values
-              .where((p) => 
-                  p.mesaId == entidade.id &&
-                  p.comandaId != null &&
-                  (p.syncStatus == SyncStatusPedido.pendente || p.syncStatus == SyncStatusPedido.sincronizando) &&
-                  !_pedidosProcessados.contains(p.id)) // Só inclui se ainda não foi processado
-              .toList();
-          debugPrint('📦 Pedidos locais para comandas: ${pedidosLocaisParaComandas.length} (já processados: ${_pedidosProcessados.length})');
-          // Marca como processados
-          for (final pedido in pedidosLocaisParaComandas) {
-            _pedidosProcessados.add(pedido.id);
-          }
-        }
+      // SEMPRE processa comandas se houver no retorno, independente da configuração
+      // Se não houver comandas, lista fica vazia e mostra apenas visão geral
+      if (entidade.tipo == TipoEntidade.mesa) {
+        // Processa comandas do servidor (pode ser lista vazia se não houver comandas)
+        final comandasRetorno = resultadoCompleto.comandas ?? [];
+        debugPrint('🔄 Processando ${comandasRetorno.length} comandas do servidor (independente da configuração)...');
+        // _processarComandasDoRetorno já limpa comandas internamente antes de processar
         _processarComandasDoRetorno(
-          resultadoCompleto.comandas!, 
-          pedidosServidor, 
-          pedidosLocais: pedidosLocaisParaComandas
+          comandasRetorno, 
+          pedidosServidor
         );
+      } else {
+        // Se não é mesa, garante que comandas estão limpas
+        _comandasDaMesa = [];
+        _produtosPorComanda.clear();
+        _vendasPorComanda.clear();
       }
-
-      // Busca pedidos locais PENDENTES ou SINCRONIZANDO
-      // IMPORTANTE: Não processa pedidos que já foram adicionados via evento pedidoCriado
-      // Isso evita duplicação quando loadProdutos é chamado após um pedido já ter sido adicionado
-      final pedidosLocais = _buscarPedidosLocaisFiltrados();
       
+      // Limpa produtos ANTES de processar novos (garante que lista seja atualizada)
+      _produtosAgrupados = [];
+
       // Atualiza contadores de status de sincronização
       _recalcularContadoresPedidos();
 
-      // Agrupa produtos de todos os pedidos
+      // Agrupa produtos apenas dos pedidos do servidor (banco de dados)
       final Map<String, ProdutoAgrupado> produtosMap = {};
+      
+      // Limpa venda atual se não veio no retorno (será atualizada depois se necessário)
+      if (resultadoCompleto.venda == null && entidade.tipo == TipoEntidade.mesa) {
+        _vendaAtual = null;
+      }
 
-      // Processa pedidos do servidor (itens já vêm na resposta)
+      // Processa apenas pedidos do servidor (itens já vêm na resposta)
       debugPrint('🔄 Processando ${pedidosServidor.length} pedidos do servidor...');
       for (final pedido in pedidosServidor) {
         debugPrint('  📦 Processando pedido: ${pedido.numero} (ID: ${pedido.id})');
         _processarItensPedidoServidorCompleto(pedido, produtosMap);
       }
       debugPrint('✅ Produtos agrupados após processar servidor: ${produtosMap.length}');
-
-      // Processa pedidos locais
-      for (final pedido in pedidosLocais) {
-        _processarItensPedidoLocal(pedido, produtosMap);
-      }
 
       // Converte map para lista ordenada usando método auxiliar
       final produtosList = _mapaParaProdutosOrdenados(produtosMap);
@@ -1019,43 +848,67 @@ class MesaDetalhesProvider extends ChangeNotifier {
       _carregandoProdutos = false;
       notifyListeners();
       
-      debugPrint('✅ Estado atualizado com ${_produtosAgrupados.length} produtos');
+      debugPrint('✅ Estado atualizado com ${_produtosAgrupados.length} produtos e ${_comandasDaMesa.length} comandas');
     } catch (e) {
+      // Limpa produtos e comandas quando há erro para garantir recarga completa no próximo refresh
       _produtosAgrupados = [];
-      _errorMessage = 'Erro ao carregar produtos: ${e.toString()}';
+      _comandasDaMesa = [];
+      _produtosPorComanda.clear();
+      _vendasPorComanda.clear();
+      
+      // Detecta erros de conexão e cria mensagem amigável (sem stack trace)
+      final errorString = e.toString().toLowerCase();
+      if (errorString.contains('connection') ||
+          errorString.contains('conexão') ||
+          errorString.contains('network') ||
+          errorString.contains('rede') ||
+          errorString.contains('timeout') ||
+          errorString.contains('socket') ||
+          errorString.contains('failed host lookup') ||
+          errorString.contains('no internet') ||
+          errorString.contains('sem internet') ||
+          (e.toString().contains('DioException') && errorString.contains('connection'))) {
+        _errorMessage = 'Erro de conexão com o servidor';
+      } else {
+        // Extrai apenas a mensagem principal do erro, sem stack trace
+        final errorMsg = e.toString();
+        // Remove stack trace se presente (geralmente vem após #0 ou #1)
+        final cleanMessage = errorMsg.split('#0').first.trim();
+        // Se ainda for muito longo, pega apenas a primeira linha
+        final firstLine = cleanMessage.split('\n').first.trim();
+        _errorMessage = firstLine.length > 100 
+            ? 'Erro ao carregar produtos: ${firstLine.substring(0, 100)}...'
+            : 'Erro ao carregar produtos: $firstLine';
+      }
+      
       _isLoading = false;
       _carregandoProdutos = false;
+      _carregandoComandas = false;
       notifyListeners();
     }
   }
 
   /// Processa comandas usando dados já retornados (evita chamada duplicada)
-  /// Inclui comandas de pedidos locais pendentes que ainda não foram sincronizados
+  /// Processa apenas comandas do servidor (banco de dados)
+  /// IMPORTANTE: Sempre limpa comandas ANTES de processar novas para garantir atualização das abas
+  /// Também processa pedidos sem comanda e cria aba "Sem Comanda" se necessário
   void _processarComandasDoRetorno(
     List<ComandaListItemDto> comandasRetorno, 
-    List<PedidoComItensPdvDto> pedidos, {
-    List<PedidoLocal> pedidosLocais = const [],
-  }) {
+    List<PedidoComItensPdvDto> pedidos,
+  ) {
     _carregandoComandas = true;
     notifyListeners();
 
     try {
-      // Cria um mapa de comandas para facilitar busca e merge
-      // Preserva comandas virtuais existentes (criadas por pedidos locais)
+      // SEMPRE limpa comandas antes de processar novas (garante que abas sejam atualizadas)
+      _comandasDaMesa = [];
+      _produtosPorComanda.clear();
+      _vendasPorComanda.clear();
+      
+      // Cria um mapa de comandas processando apenas dados do servidor
       final comandasMap = <String, ComandaComProdutos>{};
       
-      // Adiciona comandas virtuais existentes ao mapa para preservá-las
-      // Usa Set para busca O(1) em vez de any() que é O(n)
-      final idsComandasServidor = comandasRetorno.map((c) => c.id).toSet();
-      for (final comandaExistente in _comandasDaMesa) {
-        // Verifica se é uma comanda virtual (não veio do servidor)
-        if (!idsComandasServidor.contains(comandaExistente.comanda.id)) {
-          // É comanda virtual, preserva no mapa
-          comandasMap[comandaExistente.comanda.id] = comandaExistente;
-        }
-      }
-      
-      // Processa comandas do servidor
+      // Processa apenas comandas do servidor (banco de dados)
       for (final comanda in comandasRetorno) {
         // Agrupa produtos dos pedidos dessa comanda (servidor)
         final produtosMap = <String, ProdutoAgrupado>{};
@@ -1094,105 +947,39 @@ class MesaDetalhesProvider extends ChangeNotifier {
         _vendasPorComanda[comanda.id] = vendaComanda;
       }
       
-      // Processa pedidos locais pendentes para adicionar/atualizar comandas
-      // IMPORTANTE: Filtra pedidos que já foram processados via evento pedidoCriado
-      final comandasIdsLocais = <String>{};
-      // Agrupa pedidos locais por comanda para processar todos de uma vez
-      // Mas apenas pedidos que ainda NÃO foram processados
-      final Map<String, List<PedidoLocal>> pedidosLocaisPorComanda = {};
-      for (final pedidoLocal in pedidosLocais) {
-        if (pedidoLocal.comandaId == null) continue;
-        // Só adiciona se ainda não foi processado via evento
-        if (!_pedidosProcessados.contains(pedidoLocal.id)) {
-          pedidosLocaisPorComanda.putIfAbsent(pedidoLocal.comandaId!, () => []).add(pedidoLocal);
-          // Marca como processado
-          _pedidosProcessados.add(pedidoLocal.id);
+      // Processa pedidos SEM comanda (venda sem comanda)
+      final produtosSemComandaMap = <String, ProdutoAgrupado>{};
+      for (final pedido in pedidos) {
+        // Só processa pedidos sem comanda (comandaId é null ou vazio)
+        if (pedido.comandaId != null && pedido.comandaId!.isNotEmpty) continue;
+        
+        debugPrint('📦 Processando pedido sem comanda: ${pedido.numero}');
+        
+        for (final item in pedido.itens) {
+          _agruparProdutoNoMapa(
+            produtosSemComandaMap,
+            item.produtoId,
+            item.produtoNome,
+            item.produtoVariacaoId,
+            item.produtoVariacaoNome,
+            item.precoUnitario,
+            item.quantidade,
+            variacaoAtributosValores: item.variacaoAtributosValores,
+          );
         }
       }
       
-      // Processa pedidos locais por comanda
-      for (final entry in pedidosLocaisPorComanda.entries) {
-        final comandaId = entry.key;
-        final pedidosDaComanda = entry.value;
+      // Se há produtos sem comanda, cria entrada na aba "Sem Comanda"
+      if (produtosSemComandaMap.isNotEmpty) {
+        final produtosSemComanda = _mapaParaProdutosOrdenados(produtosSemComandaMap);
         
-        comandasIdsLocais.add(comandaId);
+        // Usa a venda atual (que deve ser a venda sem comanda)
+        // Se não houver venda atual, será null e será buscada quando necessário
+        _produtosPorComanda[_SEM_COMANDA] = produtosSemComanda;
+        _vendasPorComanda[_SEM_COMANDA] = _vendaAtual;
         
-        // Se a comanda já existe no mapa, adiciona produtos locais
-        if (comandasMap.containsKey(comandaId)) {
-          // Adiciona produtos de TODOS os pedidos locais desta comanda aos produtos existentes
-          final produtosExistentes = _produtosParaMapa(_produtosPorComanda[comandaId]!);
-          // Processa todos os pedidos locais desta comanda
-          for (final pedidoLocal in pedidosDaComanda) {
-            _processarItensPedidoLocal(pedidoLocal, produtosExistentes);
-          }
-          // Atualiza a lista de produtos da comanda
-          final produtosAtualizados = _mapaParaProdutosOrdenados(produtosExistentes);
-          _produtosPorComanda[comandaId] = produtosAtualizados;
-          comandasMap[comandaId] = ComandaComProdutos(
-            comanda: comandasMap[comandaId]!.comanda,
-            produtos: produtosAtualizados,
-            venda: comandasMap[comandaId]!.venda,
-          );
-        } else {
-          // Cria uma comanda "virtual" para pedidos locais pendentes
-          // Verifica se já existe na listagem antes de criar usando índice otimizado
-          final indiceComandas = _criarIndiceComandas();
-          if (indiceComandas.containsKey(comandaId)) {
-            debugPrint('⚠️ [MesaDetalhesProvider] Comanda $comandaId já existe na listagem, não criando novamente');
-            continue;
-          }
-          
-          debugPrint('📦 Criando comanda virtual para ${pedidosDaComanda.length} pedido(s) local(is) pendente(s) - ComandaId: $comandaId');
-          
-          final produtosMapLocal = <String, ProdutoAgrupado>{};
-          // Processa todos os pedidos locais desta comanda
-          double totalComanda = 0.0;
-          for (final pedidoLocal in pedidosDaComanda) {
-            _processarItensPedidoLocal(pedidoLocal, produtosMapLocal);
-            totalComanda += pedidoLocal.total;
-          }
-          
-          final produtosLocal = _mapaParaProdutosOrdenados(produtosMapLocal);
-          
-          // Busca número real da comanda e cria comanda virtual
-          // Se já existe na listagem atual, apenas atualiza produtos usando índice otimizado
-          final comandaExistenteIndex = indiceComandas[comandaId];
-          
-          if (comandaExistenteIndex != null) {
-            // Comanda já existe, apenas atualiza produtos
-            final comandaExistente = _comandasDaMesa[comandaExistenteIndex];
-            comandasMap[comandaId] = ComandaComProdutos(
-              comanda: comandaExistente.comanda,
-              produtos: produtosLocal,
-              venda: comandaExistente.venda,
-            );
-            _produtosPorComanda[comandaId] = produtosLocal;
-          } else {
-            // Busca número real da comanda usando método centralizado
-            _criarOuAtualizarComandaVirtual(comandaId, produtosLocal, totalComanda);
-            
-            // Adiciona ao mapa temporário com número temporário (será atualizado depois)
-            comandasMap[comandaId] = ComandaComProdutos(
-              comanda: ComandaListItemDto(
-                id: comandaId,
-                numero: comandaId.substring(0, 8), // Temporário até buscar número real
-                codigoBarras: null,
-                descricao: null,
-                status: 'Em Uso',
-                ativa: true,
-                totalPedidosAtivos: pedidosDaComanda.length,
-                valorTotalPedidosAtivos: totalComanda,
-                vendaAtualId: null,
-                pagamentos: [],
-              ),
-              produtos: produtosLocal,
-              venda: null,
-            );
-            
-            _produtosPorComanda[comandaId] = produtosLocal;
-            _vendasPorComanda[comandaId] = null;
-          }
-        }
+        debugPrint('✅ Produtos sem comanda processados: ${produtosSemComanda.length} produtos');
+        debugPrint('   Venda sem comanda: ${_vendaAtual?.id ?? "null"}');
       }
       
       // Converte mapa para lista
@@ -1200,30 +987,28 @@ class MesaDetalhesProvider extends ChangeNotifier {
 
       _comandasDaMesa = comandasComProdutos;
       _carregandoComandas = false;
+      
+      // Seleciona automaticamente a primeira aba disponível
+      _selecionarPrimeiraAbaDisponivel();
+      
+      debugPrint('✅ Comandas processadas: ${_comandasDaMesa.length} comandas com produtos');
+      debugPrint('✅ Aba "Sem Comanda": ${temProdutosSemComanda ? "SIM" : "NÃO"}');
+      debugPrint('✅ Aba selecionada: ${_abaSelecionada ?? "NENHUMA"}');
       notifyListeners();
     } catch (e) {
-      debugPrint('Erro ao processar comandas: $e');
+      debugPrint('❌ Erro ao processar comandas: $e');
+      // Em caso de erro, limpa comandas para garantir estado consistente
       _comandasDaMesa = [];
+      _produtosPorComanda.clear();
+      _vendasPorComanda.clear();
       _carregandoComandas = false;
       notifyListeners();
     }
   }
 
   /// Carrega venda atual
-  /// Se a mesa já foi limpa (venda finalizada), não vai no servidor
   Future<void> loadVendaAtual() async {
     try {
-      // Se a venda foi finalizada, não vai no servidor
-      if (_vendaFinalizada) {
-        debugPrint('ℹ️ [MesaDetalhesProvider] Venda já foi finalizada, não precisa buscar venda do servidor');
-        return;
-      }
-      
-      // Se a mesa está limpa (sem produtos/comandas/venda), não precisa ir no servidor
-      if (_produtosAgrupados.isEmpty && _comandasDaMesa.isEmpty && _vendaAtual == null) {
-        debugPrint('ℹ️ [MesaDetalhesProvider] Mesa já está limpa, não precisa buscar venda do servidor');
-        return;
-      }
       
       if (entidade.tipo == TipoEntidade.mesa) {
         final response = await mesaService.getMesaById(entidade.id);
@@ -1452,9 +1237,10 @@ class MesaDetalhesProvider extends ChangeNotifier {
   }
 
   /// Recalcula produtos agrupados da visão geral após remover uma comanda
+  /// Processa apenas produtos das comandas do servidor (banco de dados)
   void _recalcularProdutosAgrupadosVisaoGeral() {
     try {
-      // Agrupa produtos de todas as comandas restantes
+      // Agrupa produtos apenas das comandas restantes (do servidor)
       final produtosMap = <String, ProdutoAgrupado>{};
       
       for (final comanda in _comandasDaMesa) {
@@ -1472,12 +1258,6 @@ class MesaDetalhesProvider extends ChangeNotifier {
         }
       }
       
-      // Adiciona produtos de pedidos locais pendentes/sincronizando
-      final pedidosLocais = _buscarPedidosLocaisFiltrados();
-      for (final pedido in pedidosLocais) {
-        _processarItensPedidoLocal(pedido, produtosMap);
-      }
-      
       _produtosAgrupados = _mapaParaProdutosOrdenados(produtosMap);
     } catch (e) {
       debugPrint('❌ [MesaDetalhesProvider] Erro ao recalcular produtos agrupados: $e');
@@ -1488,84 +1268,75 @@ class MesaDetalhesProvider extends ChangeNotifier {
   /// Usado para evitar chamadas desnecessárias ao servidor
   bool _vendaFinalizada = false;
 
-  /// Marca venda como finalizada de forma SÍNCRONA
-  /// Deve ser chamado ANTES de disparar o evento para evitar race conditions
-  /// Isso garante que loadProdutos() não vai no servidor mesmo se for chamado antes do listener processar
-  /// Se comandaId for fornecido, remove apenas aquela comanda. Se não, limpa tudo.
-  /// Se mesaId for fornecido e a mesa puder ser liberada, dispara evento mesaLiberada internamente.
-  void marcarVendaFinalizada({String? comandaId, String? mesaId}) {
-    debugPrint('🚨 [MesaDetalhesProvider] Marcando venda como finalizada (síncrono) - comandaId: $comandaId, mesaId: $mesaId');
+  /// Marca venda como finalizada e recarrega dados da mesa
+  /// Recarrega completamente os dados do servidor para verificar se ainda há vendas abertas
+  /// Só libera a mesa se não houver nenhuma venda aberta após recarregar
+  /// Independente da configuração de controle por comanda
+  Future<void> marcarVendaFinalizada({String? comandaId, String? mesaId}) async {
+    debugPrint('🚨 [MesaDetalhesProvider] Venda finalizada - comandaId: $comandaId, mesaId: $mesaId');
+    debugPrint('🔄 [MesaDetalhesProvider] Recarregando dados da mesa para verificar se ainda há vendas abertas...');
     
     // Determina mesaId se não foi fornecido
-    String? mesaIdParaLiberacao = mesaId;
-    debugPrint('🔍 [MesaDetalhesProvider] Determinando mesaId para liberação:');
-    debugPrint('   mesaId fornecido: $mesaId');
-    debugPrint('   entidade.tipo: ${entidade.tipo}');
-    debugPrint('   entidade.id: ${entidade.id}');
-    debugPrint('   _vendaAtual?.mesaId: ${_vendaAtual?.mesaId}');
-    
-    if (mesaIdParaLiberacao == null) {
+    String? mesaIdParaVerificacao = mesaId;
+    if (mesaIdParaVerificacao == null) {
       if (entidade.tipo == TipoEntidade.mesa) {
-        mesaIdParaLiberacao = entidade.id;
-        debugPrint('   ✅ Usando entidade.id (mesa): $mesaIdParaLiberacao');
+        mesaIdParaVerificacao = entidade.id;
       } else if (entidade.tipo == TipoEntidade.comanda) {
-        // Tenta buscar mesaId da venda atual ou das vendas por comanda
-        mesaIdParaLiberacao = _vendaAtual?.mesaId;
-        if (mesaIdParaLiberacao == null && _vendasPorComanda.isNotEmpty) {
-          // Busca mesaId da primeira venda disponível
+        mesaIdParaVerificacao = _vendaAtual?.mesaId;
+        if (mesaIdParaVerificacao == null && _vendasPorComanda.isNotEmpty) {
           for (final venda in _vendasPorComanda.values) {
             if (venda?.mesaId != null) {
-              mesaIdParaLiberacao = venda!.mesaId;
-              debugPrint('   ✅ Encontrado mesaId em _vendasPorComanda: $mesaIdParaLiberacao');
+              mesaIdParaVerificacao = venda!.mesaId;
               break;
             }
           }
         }
-        // Se ainda não encontrou, tenta buscar da primeira comanda
-        if (mesaIdParaLiberacao == null && _comandasDaMesa.isNotEmpty) {
-          mesaIdParaLiberacao = _comandasDaMesa.first.venda?.mesaId;
-          debugPrint('   ✅ Encontrado mesaId em _comandasDaMesa: $mesaIdParaLiberacao');
-        }
-        if (mesaIdParaLiberacao == null) {
-          debugPrint('   ⚠️ Não foi possível determinar mesaId para comanda');
+        if (mesaIdParaVerificacao == null && _comandasDaMesa.isNotEmpty) {
+          mesaIdParaVerificacao = _comandasDaMesa.first.venda?.mesaId;
         }
       }
-    } else {
-      debugPrint('   ✅ Usando mesaId fornecido: $mesaIdParaLiberacao');
     }
     
-    // Se tem comandaId, remove apenas aquela comanda
-    if (comandaId != null) {
-      debugPrint('🚨 [MesaDetalhesProvider] Removendo apenas comanda $comandaId');
-      _removerComandaDaListagem(comandaId);
-      
-      // Verifica se ainda há comandas restantes
-      final pedidosLocaisRestantes = _buscarPedidosLocaisFiltrados();
-      if (_comandasDaMesa.isEmpty && 
-          _produtosAgrupados.isEmpty && 
-          pedidosLocaisRestantes.isEmpty &&
-          _vendaAtual == null &&
-          _vendasPorComanda.isEmpty) {
-        debugPrint('🚨 [MesaDetalhesProvider] Não há mais comandas, liberando mesa completamente');
-        _vendaFinalizada = true;
-        _limparDadosMesa();
-        
-        // Dispara evento mesaLiberada se tiver mesaId
-        if (mesaIdParaLiberacao != null) {
-          debugPrint('✅ [MesaDetalhesProvider] Disparando evento mesaLiberada para mesa $mesaIdParaLiberacao');
-          AppEventBus.instance.dispararMesaLiberada(mesaId: mesaIdParaLiberacao);
-        }
-      }
-    } else {
-      // Não tem comandaId, limpa tudo
+    // Recarrega completamente os dados da mesa do servidor
+    // Isso garante que temos o estado real após a finalização da venda
+    // Não remove nada localmente antes - o servidor já refletiu a finalização
+    await loadProdutos(refresh: true);
+    
+    // Verifica se ainda há vendas/comandas/pedidos abertos após recarregar
+    // Verifica TODAS as fontes possíveis de vendas abertas
+    final aindaHaVendasAbertas = _comandasDaMesa.isNotEmpty || 
+                                  temProdutosSemComanda ||
+                                  _produtosAgrupados.isNotEmpty ||
+                                  _pedidosPendentes > 0 ||
+                                  _pedidosSincronizando > 0 ||
+                                  _pedidosComErro > 0 ||
+                                  _vendaAtual != null ||
+                                  _vendasPorComanda.isNotEmpty;
+    
+    debugPrint('🔍 [MesaDetalhesProvider] Verificação após recarregar:');
+    debugPrint('   Comandas: ${_comandasDaMesa.length}');
+    debugPrint('   Produtos sem comanda: ${temProdutosSemComanda}');
+    debugPrint('   Produtos agrupados: ${_produtosAgrupados.length}');
+    debugPrint('   Pedidos pendentes: $_pedidosPendentes');
+    debugPrint('   Pedidos sincronizando: $_pedidosSincronizando');
+    debugPrint('   Pedidos com erro: $_pedidosComErro');
+    debugPrint('   Venda atual: ${_vendaAtual != null}');
+    debugPrint('   Vendas por comanda: ${_vendasPorComanda.length}');
+    debugPrint('   Ainda há vendas abertas: $aindaHaVendasAbertas');
+    
+    // Só libera a mesa se não houver nenhuma venda aberta
+    // Independente da configuração de controle por comanda
+    if (!aindaHaVendasAbertas && mesaIdParaVerificacao != null) {
+      debugPrint('✅ [MesaDetalhesProvider] Não há mais vendas abertas, liberando mesa $mesaIdParaVerificacao');
       _vendaFinalizada = true;
       _limparDadosMesa();
       
-      // Dispara evento mesaLiberada se tiver mesaId
-      if (mesaIdParaLiberacao != null) {
-        debugPrint('✅ [MesaDetalhesProvider] Disparando evento mesaLiberada para mesa $mesaIdParaLiberacao');
-        AppEventBus.instance.dispararMesaLiberada(mesaId: mesaIdParaLiberacao);
-      }
+      // Dispara evento mesaLiberada
+      AppEventBus.instance.dispararMesaLiberada(mesaId: mesaIdParaVerificacao);
+    } else if (aindaHaVendasAbertas) {
+      debugPrint('ℹ️ [MesaDetalhesProvider] Ainda há vendas abertas na mesa, não liberando');
+      // Seleciona automaticamente a primeira aba disponível após recarregar
+      _selecionarPrimeiraAbaDisponivel();
     }
   }
 

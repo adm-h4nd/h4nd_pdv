@@ -590,7 +590,22 @@ class MesasProvider extends ChangeNotifier {
         notifyListeners();
       }
     } catch (e) {
-      _errorMessage = 'Erro ao carregar mesas: ${e.toString()}';
+      // Detecta erros de conexão e cria mensagem amigável
+      final errorString = e.toString().toLowerCase();
+      if (errorString.contains('connection') ||
+          errorString.contains('conexão') ||
+          errorString.contains('network') ||
+          errorString.contains('rede') ||
+          errorString.contains('timeout') ||
+          errorString.contains('socket') ||
+          errorString.contains('failed host lookup') ||
+          errorString.contains('no internet') ||
+          errorString.contains('sem internet') ||
+          (e.toString().contains('DioException') && errorString.contains('connection'))) {
+        _errorMessage = 'Erro de conexão com o servidor';
+      } else {
+        _errorMessage = 'Erro ao carregar mesas: ${e.toString()}';
+      }
       _isLoading = false;
       notifyListeners();
       debugPrint('Erro ao carregar mesas: $e');

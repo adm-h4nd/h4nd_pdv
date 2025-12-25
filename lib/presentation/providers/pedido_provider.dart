@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../data/models/local/pedido_local.dart';
 import '../../data/models/local/item_pedido_local.dart';
@@ -68,10 +69,18 @@ class PedidoProvider extends ChangeNotifier {
     String? comandaId,
     BuildContext? context,
   }) async {
+    debugPrint('📝 [PedidoProvider] iniciarNovoPedido chamado:');
+    debugPrint('  - MesaId: $mesaId');
+    debugPrint('  - ComandaId: $comandaId');
+    
     _inicializarPedido(
       mesaId: mesaId,
       comandaId: comandaId,
     );
+    
+    debugPrint('📝 [PedidoProvider] Pedido inicializado:');
+    debugPrint('  - MesaId no pedido: ${_pedidoAtual?.mesaId}');
+    debugPrint('  - ComandaId no pedido: ${_pedidoAtual?.comandaId}');
     
     return true;
   }
@@ -162,13 +171,35 @@ class PedidoProvider extends ChangeNotifier {
       final mesaId = _pedidoAtual!.mesaId;
       final comandaId = _pedidoAtual!.comandaId;
 
+      debugPrint('💾 [PedidoProvider] Finalizando pedido:');
+      debugPrint('  - PedidoId: ${_pedidoAtual!.id}');
+      debugPrint('  - MesaId preservado: $mesaId');
+      debugPrint('  - ComandaId preservado: $comandaId');
+
       // Marca o pedido como pendente de sincronização
       _pedidoAtual!.syncStatus = SyncStatusPedido.pendente;
       _pedidoAtual!.syncAttempts = 0;
       _pedidoAtual!.dataAtualizacao = DateTime.now();
 
       // Salva na base local
+      debugPrint('💾 [PedidoProvider] Salvando pedido no Hive:');
+      debugPrint('  - PedidoId: ${_pedidoAtual!.id}');
+      debugPrint('  - MesaId ANTES do upsert: ${_pedidoAtual!.mesaId}');
+      debugPrint('  - ComandaId ANTES do upsert: ${_pedidoAtual!.comandaId}');
+      
       await _pedidoRepo.upsert(_pedidoAtual!);
+      
+      // Verificar se foi salvo corretamente lendo de volta
+      final pedidos = await _pedidoRepo.getAll();
+      final pedidoSalvo = pedidos.firstWhere(
+        (p) => p.id == _pedidoAtual!.id,
+        orElse: () => throw Exception('Pedido não encontrado após salvar'),
+      );
+      
+      debugPrint('💾 [PedidoProvider] Pedido lido do Hive após salvar:');
+      debugPrint('  - PedidoId: ${pedidoSalvo.id}');
+      debugPrint('  - MesaId APÓS ler do Hive: ${pedidoSalvo.mesaId}');
+      debugPrint('  - ComandaId APÓS ler do Hive: ${pedidoSalvo.comandaId}');
       
       // Armazena ID do pedido antes de limpar
       final pedidoIdSalvo = _pedidoAtual!.id;

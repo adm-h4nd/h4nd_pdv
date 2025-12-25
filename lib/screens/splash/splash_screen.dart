@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../core/adaptive_layout/adaptive_layout.dart';
+import '../../core/config/server_config_service.dart';
 import '../../presentation/providers/auth_provider.dart';
 import '../../presentation/widgets/common/mx_logo.dart';
 import '../../presentation/widgets/common/home_navigation.dart';
 import '../../presentation/screens/auth/login_screen.dart';
+import '../../presentation/screens/server_config/server_config_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -97,6 +99,19 @@ class _SplashScreenState extends State<SplashScreen>
     // Verifica autenticação e navega após animação
     Future.delayed(const Duration(milliseconds: 2500), () async {
       if (!mounted) return;
+      
+      // Verificar se o servidor está configurado
+      if (!ServerConfigService.isConfigured()) {
+        if (!mounted) return;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (context) => const AdaptiveLayout(
+              child: ServerConfigScreen(allowBack: false),
+            ),
+          ),
+        );
+        return;
+      }
       
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final isAuthenticated = await authProvider.checkAuth();

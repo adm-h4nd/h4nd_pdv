@@ -8,6 +8,11 @@ import '../../models/sync/exibicao_produto_pdv_sync_dto.dart';
 import '../../repositories/produto_local_repository.dart';
 import '../../repositories/exibicao_produto_local_repository.dart';
 import '../../repositories/pedido_local_repository.dart';
+import '../../repositories/mesa_local_repository.dart';
+import '../../repositories/comanda_local_repository.dart';
+import '../../models/modules/restaurante/mesa_list_item.dart';
+import '../../models/modules/restaurante/comanda_list_item.dart';
+import '../../models/sync/mesa_comanda_pdv_sync_dto.dart';
 import '../../models/local/pedido_local.dart';
 import '../../models/local/sync_status_pedido.dart';
 import '../../models/local/produto_composicao_local.dart';
@@ -22,6 +27,8 @@ class SyncResult {
   final String? erro;
   final int produtosSincronizados;
   final int gruposSincronizados;
+  final int mesasSincronizadas;
+  final int comandasSincronizadas;
   final int pedidosSincronizados;
   final int pedidosComErro;
 
@@ -30,6 +37,8 @@ class SyncResult {
     this.erro,
     this.produtosSincronizados = 0,
     this.gruposSincronizados = 0,
+    this.mesasSincronizadas = 0,
+    this.comandasSincronizadas = 0,
     this.pedidosSincronizados = 0,
     this.pedidosComErro = 0,
   });
@@ -65,6 +74,8 @@ class SyncService {
   final ProdutoLocalRepository _produtoRepo;
   final ExibicaoProdutoLocalRepository _exibicaoRepo;
   final PedidoLocalRepository _pedidoRepo;
+  final MesaLocalRepository _mesaRepo;
+  final ComandaLocalRepository _comandaRepo;
   final PedidoService _pedidoService;
   final ConfiguracaoRestauranteService? _configuracaoRestauranteService;
 
@@ -78,12 +89,16 @@ class SyncService {
     required ProdutoLocalRepository produtoRepo,
     required ExibicaoProdutoLocalRepository exibicaoRepo,
     required PedidoLocalRepository pedidoRepo,
+    required MesaLocalRepository mesaRepo,
+    required ComandaLocalRepository comandaRepo,
     required PedidoService pedidoService,
     ConfiguracaoRestauranteService? configuracaoRestauranteService,
   })  : _apiClient = apiClient,
         _produtoRepo = produtoRepo,
         _exibicaoRepo = exibicaoRepo,
         _pedidoRepo = pedidoRepo,
+        _mesaRepo = mesaRepo,
+        _comandaRepo = comandaRepo,
         _pedidoService = pedidoService,
         _configuracaoRestauranteService = configuracaoRestauranteService;
 
@@ -118,7 +133,7 @@ class SyncService {
         },
       );
 
-      // 2. Sincronizar grupos de exibição (50-100% do progresso geral)
+      // 2. Sincronizar grupos de exibição (50-70% do progresso geral)
       onProgress?.call(SyncProgress(
         etapa: 'Grupos de Exibição',
         progresso: 0,
@@ -128,22 +143,42 @@ class SyncService {
       
       final gruposResult = await _sincronizarGruposExibicao(
         onProgress: (progress) {
-          // Progresso da etapa grupos (0-100%) mapeado para 50-100% do geral
+          // Progresso da etapa grupos (0-100%) mapeado para 50-70% do geral
           onProgress?.call(SyncProgress(
             etapa: progress.etapa,
             progresso: progress.progresso,
             mensagem: progress.mensagem,
-            progressoGeral: 50 + (progress.progresso * 0.5).round(),
+            progressoGeral: 50 + (progress.progresso * 0.2).round(),
           ));
         },
       );
 
-      // 3. Sincronizar pedidos pendentes
+      // 3. Sincronizar mesas e comandas (70-85% do progresso geral)
+      onProgress?.call(SyncProgress(
+        etapa: 'Mesas e Comandas',
+        progresso: 0,
+        mensagem: 'Sincronizando mesas e comandas...',
+        progressoGeral: 70,
+      ));
+      
+      final mesasComandasResult = await _sincronizarMesasComandas(
+        onProgress: (progress) {
+          // Progresso da etapa mesas/comandas (0-100%) mapeado para 70-85% do geral
+          onProgress?.call(SyncProgress(
+            etapa: progress.etapa,
+            progresso: progress.progresso,
+            mensagem: progress.mensagem,
+            progressoGeral: 70 + (progress.progresso * 0.15).round(),
+          ));
+        },
+      );
+
+      // 4. Sincronizar pedidos pendentes (85-100% do progresso geral)
       onProgress?.call(SyncProgress(
         etapa: 'Pedidos',
         progresso: 0,
         mensagem: 'Sincronizando pedidos...',
-        progressoGeral: 100,
+        progressoGeral: 85,
       ));
       
       final pedidosResult = await _sincronizarPedidos(
@@ -152,7 +187,7 @@ class SyncService {
             etapa: progress.etapa,
             progresso: progress.progresso,
             mensagem: progress.mensagem,
-            progressoGeral: 100, // Pedidos são rápidos, mantém em 100%
+            progressoGeral: 85 + (progress.progresso * 0.15).round(), // Pedidos: 85-100%
           ));
         },
       );
@@ -168,6 +203,8 @@ class SyncService {
         sucesso: true,
         produtosSincronizados: produtosResult.total,
         gruposSincronizados: gruposResult.total,
+        mesasSincronizadas: mesasComandasResult.mesas,
+        comandasSincronizadas: mesasComandasResult.comandas,
         pedidosSincronizados: pedidosResult.sincronizados,
         pedidosComErro: pedidosResult.erros,
       );
@@ -449,6 +486,130 @@ class SyncService {
     }
   }
 
+  /// Sincroniza mesas e comandas
+  Future<({int mesas, int comandas, String? erro})> _sincronizarMesasComandas({
+    Function(SyncProgress)? onProgress,
+  }) async {
+    onProgress?.call(SyncProgress(
+      etapa: 'Mesas e Comandas',
+      progresso: 0,
+      mensagem: 'Buscando mesas e comandas...',
+    ));
+
+    try {
+      debugPrint('🔄 Iniciando sincronização de mesas e comandas...');
+      debugPrint('📍 Endpoint: ${ApiEndpoints.syncMesasComandas}');
+
+      final response = await _apiClient.get<Map<String, dynamic>>(
+        ApiEndpoints.syncMesasComandas,
+      );
+
+      debugPrint('📥 Resposta recebida: ${response.statusCode}');
+      debugPrint('📦 Response data: ${response.data}');
+
+      if (response.data == null) {
+        debugPrint('❌ Resposta vazia da API');
+        throw SyncException('Resposta vazia da API');
+      }
+
+      final apiResponse = ApiResponse<Map<String, dynamic>>.fromJson(
+        response.data!,
+        (data) => data as Map<String, dynamic>? ?? {},
+      );
+
+      debugPrint('✅ API Response success: ${apiResponse.success}');
+      debugPrint('📋 API Response message: ${apiResponse.message}');
+      debugPrint('📊 API Response data: ${apiResponse.data}');
+
+      if (!apiResponse.success || apiResponse.data == null) {
+        debugPrint('❌ Erro na resposta da API: ${apiResponse.message}');
+        throw SyncException('Erro ao buscar mesas e comandas: ${apiResponse.message}');
+      }
+
+      final data = apiResponse.data!;
+      debugPrint('📦 Data extraído: $data');
+      
+      // Converter JSON para DTOs de sincronização
+      debugPrint('🔄 Convertendo JSON para DTOs...');
+      final syncResponse = MesaComandaPdvSyncResponseDto.fromJson(data);
+      debugPrint('✅ DTOs convertidos: ${syncResponse.mesas.length} mesas, ${syncResponse.comandas.length} comandas');
+
+      onProgress?.call(SyncProgress(
+        etapa: 'Mesas e Comandas',
+        progresso: 50,
+        mensagem: 'Processando ${syncResponse.mesas.length} mesas e ${syncResponse.comandas.length} comandas...',
+      ));
+
+      // Converter DTOs de sincronização para DTOs de lista (com valores padrão)
+      debugPrint('🔄 Convertendo para MesaListItemDto...');
+      final mesasDto = syncResponse.mesas.map((m) {
+        debugPrint('  📋 Mesa: ${m.numero} (${m.id})');
+        return MesaListItemDto(
+          id: m.id,
+          numero: m.numero,
+          descricao: m.descricao,
+          status: 'Livre', // Status padrão para mesas offline
+          ativa: m.isAtiva,
+          permiteReserva: false, // Valor padrão
+        );
+      }).toList();
+
+      debugPrint('🔄 Convertendo para ComandaListItemDto...');
+      final comandasDto = syncResponse.comandas.map((c) {
+        debugPrint('  📋 Comanda: ${c.numero} (${c.id})');
+        return ComandaListItemDto(
+          id: c.id,
+          numero: c.numero,
+          codigoBarras: c.codigoBarras,
+          descricao: c.descricao,
+          status: 'Livre', // Status padrão para comandas offline
+          ativa: c.isAtiva,
+          totalPedidosAtivos: 0,
+          valorTotalPedidosAtivos: 0.0,
+        );
+      }).toList();
+
+      debugPrint('✅ Conversão concluída: ${mesasDto.length} mesas, ${comandasDto.length} comandas');
+
+      onProgress?.call(SyncProgress(
+        etapa: 'Mesas e Comandas',
+        progresso: 80,
+        mensagem: 'Salvando mesas e comandas...',
+      ));
+
+      // Garantir que os repositórios estão inicializados
+      debugPrint('🔄 Inicializando repositórios...');
+      await _mesaRepo.init();
+      await _comandaRepo.init();
+      debugPrint('✅ Repositórios inicializados');
+
+      // Salvar localmente (substituir todos)
+      debugPrint('💾 Salvando ${mesasDto.length} mesas...');
+      await _mesaRepo.salvarTodas(mesasDto);
+      debugPrint('✅ Mesas salvas');
+
+      debugPrint('💾 Salvando ${comandasDto.length} comandas...');
+      await _comandaRepo.salvarTodas(comandasDto);
+      debugPrint('✅ Comandas salvas');
+
+      // Atualizar metadados
+      await _atualizarMetadadosSincronizacao('mesas_comandas', DateTime.now());
+
+      onProgress?.call(SyncProgress(
+        etapa: 'Mesas e Comandas',
+        progresso: 100,
+        mensagem: '${mesasDto.length} mesas e ${comandasDto.length} comandas sincronizadas',
+      ));
+
+      debugPrint('✅ Sincronização de mesas e comandas concluída: ${mesasDto.length} mesas, ${comandasDto.length} comandas');
+      return (mesas: mesasDto.length, comandas: comandasDto.length, erro: null);
+    } catch (e, stackTrace) {
+      debugPrint('❌ Erro ao sincronizar mesas e comandas: $e');
+      debugPrint('📚 Stack trace: $stackTrace');
+      return (mesas: 0, comandas: 0, erro: e.toString());
+    }
+  }
+
   /// Verifica se precisa sincronizar
   Future<bool> precisaSincronizar({Duration? intervaloMinimo}) async {
     final ultimaSync = await obterUltimaSincronizacao();
@@ -531,6 +692,11 @@ class SyncService {
       for (int i = 0; i < pedidosPendentes.length; i++) {
         final pedido = pedidosPendentes[i];
         
+        debugPrint('📦 [SyncService] Sincronizando pedido ${i + 1}/${pedidosPendentes.length}:');
+        debugPrint('  - PedidoId: ${pedido.id}');
+        debugPrint('  - MesaId no pedido: ${pedido.mesaId}');
+        debugPrint('  - ComandaId no pedido: ${pedido.comandaId}');
+        
         try {
           // Marcar como sincronizando
           pedido.syncStatus = SyncStatusPedido.sincronizando;
@@ -539,6 +705,10 @@ class SyncService {
 
           // Converter para DTO
           final pedidoDto = await _converterPedidoLocalParaDto(pedido);
+          
+          debugPrint('📤 [SyncService] DTO criado para envio:');
+          debugPrint('  - MesaId no DTO: ${pedidoDto['mesaId']}');
+          debugPrint('  - ComandaId no DTO: ${pedidoDto['comandaId']}');
 
           // Enviar para servidor
           final response = await _pedidoService.createPedido(pedidoDto);
@@ -602,6 +772,10 @@ class SyncService {
     String? mesaIdFinal = pedido.mesaId;
     String? comandaIdFinal = pedido.comandaId;
     
+    debugPrint('🔄 [SyncService] Valores iniciais do pedido:');
+    debugPrint('  - MesaId original: $mesaIdFinal');
+    debugPrint('  - ComandaId original: $comandaIdFinal');
+    
     if (_configuracaoRestauranteService != null) {
       try {
         final configResponse = await _configuracaoRestauranteService!.getConfiguracao();
@@ -613,14 +787,10 @@ class SyncService {
           debugPrint('  - ControlePorComanda: ${config.controlePorComanda}');
           
           if (config.controlePorComanda) {
-            // Controle por Comanda: sempre enviar comanda, mesa opcional
+            // Controle por Comanda: comanda e mesa são opcionais
             debugPrint('✅ Configuração: Controle por Comanda');
-            if (comandaIdFinal == null) {
-              debugPrint('⚠️ AVISO: Comanda é obrigatória mas não foi informada no pedido local');
-              // Não bloqueia, mas avisa - backend vai validar
-            }
-            // Mesa pode ser enviada se tiver (opcional)
-            debugPrint('  - Enviando: ComandaId=$comandaIdFinal, MesaId=$mesaIdFinal (opcional)');
+            // Tudo é opcional - não há validação obrigatória
+            debugPrint('  - Enviando: ComandaId=$comandaIdFinal (opcional), MesaId=$mesaIdFinal (opcional)');
           } else if (config.controlePorMesa) {
             // Controle por Mesa: enviar apenas mesa, comanda sempre null
             debugPrint('✅ Configuração: Controle por Mesa');
@@ -639,6 +809,10 @@ class SyncService {
       debugPrint('⚠️ ConfiguracaoRestauranteService não disponível, enviando valores originais');
     }
     
+    debugPrint('🔄 [SyncService] Valores finais antes de criar DTO:');
+    debugPrint('  - MesaId final: $mesaIdFinal');
+    debugPrint('  - ComandaId final: $comandaIdFinal');
+    
     final dto = {
       'tipo': 2, // TipoPedido.Venda
       'tipoContexto': (mesaIdFinal != null || comandaIdFinal != null)
@@ -648,6 +822,10 @@ class SyncService {
       'comandaId': comandaIdFinal,
       'clienteNome': 'Consumidor Final', // TODO: Pegar do pedido se tiver
       'observacoes': pedido.observacoesGeral, // Pode ser null, está correto
+    };
+    
+    final dtoComItens = {
+      ...dto,
       'itens': await Future.wait(pedido.itens.map((item) async {
         debugPrint('    📦 Item: ${item.produtoNome}');
         debugPrint('      - Observações: ${item.observacoes ?? "(null)"}');
@@ -729,8 +907,13 @@ class SyncService {
       })),
     };
     
-    debugPrint('✅ DTO gerado com ${(dto['itens'] as List).length} itens');
-    return dto;
+    debugPrint('📤 [SyncService] DTO final criado com itens:');
+    debugPrint('  - MesaId no DTO: ${dtoComItens['mesaId']}');
+    debugPrint('  - ComandaId no DTO: ${dtoComItens['comandaId']}');
+    debugPrint('  - TipoContexto: ${dtoComItens['tipoContexto']}');
+    debugPrint('  - Total de itens: ${(dtoComItens['itens'] as List).length}');
+    
+    return dtoComItens;
   }
 
   /// Sincroniza apenas pedidos (pode ser chamado manualmente)
@@ -759,6 +942,12 @@ class SyncService {
         orElse: () => throw Exception('Pedido $pedidoId não encontrado'),
       );
 
+      debugPrint('📦 [SyncService] Pedido encontrado para sincronização:');
+      debugPrint('  - PedidoId: ${pedido.id}');
+      debugPrint('  - MesaId no pedido: ${pedido.mesaId}');
+      debugPrint('  - ComandaId no pedido: ${pedido.comandaId}');
+      debugPrint('  - Status: ${pedido.syncStatus}');
+
       // Se já está sincronizado, não precisa fazer nada
       if (pedido.syncStatus == SyncStatusPedido.sincronizado) {
         _pedidosSincronizando.remove(pedidoId);
@@ -774,6 +963,10 @@ class SyncService {
 
       // Converter para DTO
       final pedidoDto = await _converterPedidoLocalParaDto(pedido);
+      
+      debugPrint('📤 [SyncService] DTO criado para envio:');
+      debugPrint('  - MesaId no DTO: ${pedidoDto['mesaId']}');
+      debugPrint('  - ComandaId no DTO: ${pedidoDto['comandaId']}');
 
       // Enviar para servidor
       final response = await _pedidoService.createPedido(pedidoDto);

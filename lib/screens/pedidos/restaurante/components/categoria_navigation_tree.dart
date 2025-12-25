@@ -20,10 +20,12 @@ import '../modals/selecionar_produto_modal.dart';
 /// Componente de navegação em árvore para seleção de categorias e produtos
 class CategoriaNavigationTree extends StatefulWidget {
   final Function(ProdutoExibicaoBasicoDto) onProdutoSelected;
+  final ValueNotifier<bool>? mostrarBuscaNotifier; // Controla visibilidade da busca externamente
 
   const CategoriaNavigationTree({
     super.key,
     required this.onProdutoSelected,
+    this.mostrarBuscaNotifier,
   });
 
   @override
@@ -45,6 +47,7 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
   final TextEditingController _searchController = TextEditingController();
   bool _isSearching = false;
   List<ProdutoExibicaoBasicoDto> _searchResults = [];
+  bool _mostrarBusca = false; // Controla visibilidade da busca em mobile
 
   ExibicaoProdutoLocalRepository get _exibicaoRepo {
     final servicesProvider = Provider.of<ServicesProvider>(context, listen: false);
@@ -61,11 +64,32 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
     super.initState();
     _loadCategoriasRaiz();
     _searchController.addListener(_onSearchChanged);
+    
+    // Escuta mudanças no notifier externo
+    if (widget.mostrarBuscaNotifier != null) {
+      widget.mostrarBuscaNotifier!.addListener(_onMostrarBuscaChanged);
+      // Sincroniza estado inicial
+      _mostrarBusca = widget.mostrarBuscaNotifier!.value;
+    }
+  }
+  
+  void _onMostrarBuscaChanged() {
+    if (widget.mostrarBuscaNotifier != null) {
+      setState(() {
+        _mostrarBusca = widget.mostrarBuscaNotifier!.value;
+        if (!_mostrarBusca) {
+          _searchController.clear();
+        }
+      });
+    }
   }
 
   @override
   void dispose() {
     _searchController.removeListener(_onSearchChanged);
+    if (widget.mostrarBuscaNotifier != null) {
+      widget.mostrarBuscaNotifier!.removeListener(_onMostrarBuscaChanged);
+    }
     _searchController.dispose();
     super.dispose();
   }
@@ -161,6 +185,14 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
       _currentProducts = null;
     });
     _carregarConteudoCategoriaRaiz(categoriaId);
+  }
+  
+  // Retorna a categoria raiz selecionada como DTO para o breadcrumb
+  ExibicaoProdutoListItemDto? _getCategoriaRaizSelecionadaDto() {
+    if (_categoriaRaizSelecionada == null) return null;
+    final categoriaLocal = _exibicaoRepo.buscarPorId(_categoriaRaizSelecionada!);
+    if (categoriaLocal == null) return null;
+    return _mapExibicaoLocalToListItemDto(categoriaLocal);
   }
 
   Future<void> _carregarConteudoCategoriaRaiz(String categoriaId) async {
@@ -309,204 +341,237 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
 
     return Column(
       children: [
-        // Seção de navegação (search + tabs) num cartão clean e integrado
+        // Seção de navegação integrada com o cabeçalho
         Container(
           width: double.infinity,
-          padding: EdgeInsets.symmetric(horizontal: adaptive.isMobile ? 12 : 16, vertical: adaptive.isMobile ? 10 : 12),
-          color: const Color(0xFFF5F6F7),
-          child: Container(
-            padding: EdgeInsets.symmetric(horizontal: adaptive.isMobile ? 12 : 14, vertical: adaptive.isMobile ? 12 : 14),
           decoration: BoxDecoration(
-            color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.grey.shade200),
-            boxShadow: [
-              BoxShadow(
-                  color: Colors.black.withOpacity(0.03),
-                  blurRadius: 10,
-                  offset: const Offset(0, 3),
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                const Color(0xFF2563EB).withOpacity(0.02), // Azul muito sutil no topo
+                Colors.white, // Branco na base
+              ],
+              stops: const [0.0, 0.1], // Gradiente apenas nos primeiros 10%
+            ),
+            border: Border(
+              bottom: BorderSide(
+                color: Colors.grey.shade200.withOpacity(0.4),
+                width: 0.5,
+              ),
+            ),
+          ),
+          child: Column(
+            children: [
+              // Barra decorativa verde (conecta com o cabeçalho) - mais sutil
+              Container(
+                height: 1,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      const Color(0xFF10B981).withOpacity(0.8),
+                      const Color(0xFF10B981).withOpacity(0.4),
+                    ],
+                  ),
+                ),
+              ),
+              Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: adaptive.isMobile ? 6 : 8,
+                  vertical: adaptive.isMobile ? 4 : 6,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Campo de busca - sempre visível em desktop, condicional em mobile
+                    if (!adaptive.isMobile || _mostrarBusca)
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: const Color(0xFF2563EB).withOpacity(0.15),
+                            width: 1,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF2563EB).withOpacity(0.08),
+                              blurRadius: 6,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: TextField(
+                          controller: _searchController,
+                          autofocus: adaptive.isMobile && _mostrarBusca,
+                          decoration: InputDecoration(
+                            hintText: 'Buscar produtos ou categorias...',
+                            hintStyle: GoogleFonts.plusJakartaSans(
+                              color: Colors.grey.shade500,
+                              fontSize: adaptive.isMobile ? 13 : 14,
+                            ),
+                            prefixIcon: Icon(
+                              Icons.search_rounded,
+                              color: const Color(0xFF2563EB).withOpacity(0.7),
+                              size: 20,
+                            ),
+                            suffixIcon: _isSearching || (adaptive.isMobile && _mostrarBusca)
+                                ? IconButton(
+                                    icon: Icon(
+                                      Icons.close,
+                                      size: 20,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      if (adaptive.isMobile) {
+                                        setState(() {
+                                          _mostrarBusca = false;
+                                        });
+                                      }
+                                    },
+                                  )
+                                : null,
+                            filled: true,
+                            fillColor: Colors.white,
+                            contentPadding: EdgeInsets.symmetric(
+                              vertical: adaptive.isMobile ? 8 : 10,
+                              horizontal: 12,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide.none,
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide.none,
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide(
+                                color: const Color(0xFF2563EB),
+                                width: 2,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    if (!_isSearching && _categoriasRaiz.isNotEmpty) ...[
+                      SizedBox(height: adaptive.isMobile ? 6 : 8),
+                      SizedBox(
+                        height: adaptive.isMobile ? 62 : 70,
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          padding: EdgeInsets.symmetric(horizontal: adaptive.isMobile ? 0 : 2),
+                          itemCount: _categoriasRaiz.length,
+                          itemBuilder: (context, index) {
+                            final categoria = _categoriasRaiz[index];
+                            final isSelected = _categoriaRaizSelecionada == categoria.id;
+                            final imageUrl = categoria.imagemFileName != null && categoria.imagemFileName!.isNotEmpty
+                                ? ImageUrlHelper.getThumbnailImageUrl(categoria.imagemFileName)
+                                : null;
+                            final categoriaColor = categoria.cor != null && categoria.cor!.isNotEmpty
+                                ? _parseColor(categoria.cor!)
+                                : const Color(0xFF2563EB); // Usa azul do sistema como padrão
+                            
+                            return Padding(
+                              padding: EdgeInsets.only(right: adaptive.isMobile ? 8 : 10),
+                              child: _buildCategoriaTab(
+                                categoria: categoria,
+                                isSelected: isSelected,
+                                imageUrl: imageUrl,
+                                categoriaColor: categoriaColor,
+                                onTap: () => _selecionarCategoriaRaiz(categoria.id),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ],
           ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: AppTheme.primaryColor,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(Icons.grid_view_rounded, color: Colors.white, size: 18),
-                    ),
-                    const SizedBox(width: 10),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Navegar catálogo',
-                          style: GoogleFonts.inter(
-                            fontSize: adaptive.isMobile ? 15 : 16,
-                            fontWeight: FontWeight.w700,
-                            color: AppTheme.textPrimary,
-                          ),
-                        ),
-                        Text(
-                          _isSearching ? 'Buscando...' : 'Categorias raiz e busca unificadas',
-                          style: GoogleFonts.inter(
-                            fontSize: adaptive.isMobile ? 12 : 12.5,
-                            color: AppTheme.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                TextField(
-            controller: _searchController,
-            decoration: InputDecoration(
-                    hintText: 'Buscar produtos ou categorias...',
-              hintStyle: GoogleFonts.inter(
-                      color: Colors.grey.shade500,
-              ),
-                    prefixIcon: Icon(Icons.search_rounded, color: Colors.grey.shade600),
-              suffixIcon: _isSearching
-                  ? IconButton(
-                            icon: const Icon(Icons.close),
-                            onPressed: () => _searchController.clear(),
-                    )
-                  : null,
-              filled: true,
-              fillColor: Colors.grey.shade50,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 12),
-              border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: Colors.grey.shade200),
-              ),
-              enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: Colors.grey.shade200),
-              ),
-              focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: AppTheme.primaryColor, width: 2),
-              ),
-            ),
-          ),
-                if (!_isSearching && _categoriasRaiz.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    height: adaptive.isMobile ? 84 : 96,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-                      padding: EdgeInsets.symmetric(horizontal: adaptive.isMobile ? 4 : 6),
-              itemCount: _categoriasRaiz.length,
-              itemBuilder: (context, index) {
-                final categoria = _categoriasRaiz[index];
-                final isSelected = _categoriaRaizSelecionada == categoria.id;
-                final imageUrl = categoria.imagemFileName != null && categoria.imagemFileName!.isNotEmpty
-                    ? ImageUrlHelper.getThumbnailImageUrl(categoria.imagemFileName)
-                    : null;
-                final categoriaColor = categoria.cor != null && categoria.cor!.isNotEmpty
-                    ? _parseColor(categoria.cor!)
-                    : AppTheme.restauranteColor;
-                
-                return Padding(
-                          padding: EdgeInsets.only(right: adaptive.isMobile ? 10 : 12),
-                  child: _buildCategoriaTab(
-                    categoria: categoria,
-                    isSelected: isSelected,
-                    imageUrl: imageUrl,
-                    categoriaColor: categoriaColor,
-                    onTap: () => _selecionarCategoriaRaiz(categoria.id),
-                  ),
-                );
-              },
-                    ),
-                  ),
-                ],
-              ],
-            ),
-            ),
-          ),
+        ),
         
-        // Breadcrumb de navegação (quando dentro de subcategorias)
-        if (!_isSearching && _navigationStack.isNotEmpty)
-          if (!_isSearching)
+        // Breadcrumb de navegação (quando dentro de uma categoria raiz selecionada)
+        // Mostra sempre que uma categoria raiz está selecionada, começando com ela
+        if (!_isSearching && _categoriaRaizSelecionada != null && 
+            (_currentCategories.isNotEmpty || _currentProducts != null || _navigationStack.isNotEmpty))
           Container(
-            padding: EdgeInsets.symmetric(
-                horizontal: adaptive.isMobile ? 14 : 18,
-                vertical: adaptive.isMobile ? 8 : 10,
+            width: double.infinity,
+            padding: EdgeInsets.only(
+              left: adaptive.isMobile ? 10 : 12,
+              right: adaptive.isMobile ? 10 : 12,
+              top: adaptive.isMobile ? 6 : 8,
+              bottom: adaptive.isMobile ? 6 : 8,
             ),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF5F6F7),
-                border: Border(
-                  bottom: BorderSide(color: Colors.grey.shade200),
-                ),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF5F6F7),
+              border: Border(
+                bottom: BorderSide(color: Colors.grey.shade200.withOpacity(0.5)),
               ),
-            child: Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.arrow_back),
-                  onPressed: _onBackPressed,
-                  tooltip: 'Voltar',
-                    color: AppTheme.textPrimary,
-                ),
-                Expanded(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
+            ),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                  // Categoria raiz selecionada (sempre primeiro item)
+                  Builder(
+                    builder: (context) {
+                      final categoriaRaiz = _getCategoriaRaizSelecionadaDto();
+                      if (categoriaRaiz == null) return const SizedBox.shrink();
+                      
+                      return _buildCrumbText(
+                        label: categoriaRaiz.nome,
+                        onTap: () {
+                          // Voltar para mostrar os filhos da categoria raiz
+                          setState(() {
+                            _navigationStack.clear();
+                            _currentProducts = null;
+                          });
+                          _carregarConteudoCategoriaRaiz(_categoriaRaizSelecionada!);
+                        },
+                        isActive: _navigationStack.isEmpty,
+                        adaptive: adaptive,
+                      );
+                    },
+                  ),
+                  // Subcategorias navegadas
+                  ..._navigationStack.map((categoria) {
+                    final isLast = _navigationStack.last == categoria;
+                    return Row(
                       children: [
-                          _buildCrumbText(
-                            label: 'Início',
-                            onTap: () {
+                        Icon(Icons.chevron_right, size: 14, color: Colors.grey.shade500),
+                        _buildCrumbText(
+                          label: categoria.nome,
+                          onTap: () {
+                            final index = _navigationStack.indexOf(categoria);
                             setState(() {
-                              _navigationStack.clear();
+                              _navigationStack.removeRange(
+                                index + 1,
+                                _navigationStack.length,
+                              );
                               _currentProducts = null;
                             });
-                            _loadCategoriasRaiz();
+                            // Voltar para a categoria clicada
+                            _abrirCategoria(categoria, pushToStack: false);
                           },
-                            isActive: _navigationStack.isEmpty,
-                            adaptive: adaptive,
+                          isActive: isLast,
+                          adaptive: adaptive,
                         ),
-                        ..._navigationStack.map((categoria) {
-                            final isLast = _navigationStack.last == categoria;
-                          return Row(
-                            children: [
-                                Icon(Icons.chevron_right, size: 16, color: Colors.grey.shade500),
-                                _buildCrumbText(
-                                  label: categoria.nome,
-                                  onTap: () {
-                                  final index = _navigationStack.indexOf(categoria);
-                                  setState(() {
-                                    _navigationStack.removeRange(
-                                      index + 1,
-                                      _navigationStack.length,
-                                    );
-                                    _currentProducts = null;
-                                  });
-
-                                    if (_navigationStack.isEmpty) {
-                                    _loadCategoriasRaiz();
-                                  } else {
-                                      _abrirCategoria(_navigationStack.last, pushToStack: false);
-                                  }
-                                },
-                                  isActive: isLast,
-                                  adaptive: adaptive,
-                              ),
-                            ],
-                          );
-                        }),
                       ],
-                    ),
-                  ),
-                ),
-              ],
+                    );
+                  }),
+                ],
+              ),
+            ),
             ),
           ),
         // Conteúdo: busca ou navegação normal
@@ -524,7 +589,7 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
                       const SizedBox(height: 16),
                       Text(
                         _errorMessage!,
-                        style: GoogleFonts.inter(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 16,
                           color: AppTheme.textSecondary,
                         ),
@@ -567,7 +632,7 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
             const SizedBox(height: 16),
             Text(
               'Nenhuma categoria encontrada',
-              style: GoogleFonts.inter(
+              style: GoogleFonts.plusJakartaSans(
                 fontSize: 16,
                 color: AppTheme.textSecondary,
               ),
@@ -578,13 +643,13 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
     }
 
     return GridView.builder(
-      padding: EdgeInsets.all(adaptive.isMobile ? 16 : 24),
+      padding: EdgeInsets.all(adaptive.isMobile ? 10 : 12),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: _getCrossAxisCount(adaptive),
-        crossAxisSpacing: adaptive.isMobile ? 12 : 16,
-        mainAxisSpacing: adaptive.isMobile ? 12 : 16,
-        // Altura fixa para manter padrão com cards de produto
-        mainAxisExtent: adaptive.isMobile ? 200 : 220,
+        crossAxisSpacing: adaptive.isMobile ? 8 : 10,
+        mainAxisSpacing: adaptive.isMobile ? 8 : 10,
+        // Altura reduzida para caber mais itens
+        mainAxisExtent: adaptive.isMobile ? 140 : 155,
       ),
       itemCount: categorias.length,
       itemBuilder: (context, index) {
@@ -598,109 +663,222 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
     ExibicaoProdutoListItemDto categoria,
     AdaptiveLayoutProvider adaptive,
   ) {
-    final hasChildren = categoria.quantidadeCategoriasFilhas > 0;
-    final hasProducts = categoria.quantidadeProdutos > 0;
+    final categoriaColor = categoria.cor != null && categoria.cor!.isNotEmpty
+        ? _parseColor(categoria.cor!)
+        : const Color(0xFF2563EB);
+    final hasImage = categoria.tipoRepresentacao == TipoRepresentacaoVisual.imagem &&
+        categoria.imagemFileName != null;
 
     return Material(
       color: Colors.transparent,
+      elevation: 0,
       child: InkWell(
         onTap: () => _onCategoriaSelected(categoria),
-        borderRadius: BorderRadius.circular(adaptive.isMobile ? 16 : 20),
+        borderRadius: BorderRadius.circular(adaptive.isMobile ? 18 : 20),
         child: Container(
           decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(adaptive.isMobile ? 16 : 20),
-            border: Border.all(
-              color: (categoria.cor != null ? _parseColor(categoria.cor!) : AppTheme.restauranteColor)
-                  .withOpacity(0.18),
-              width: 1,
-            ),
+            borderRadius: BorderRadius.circular(adaptive.isMobile ? 18 : 20),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.03),
+                color: categoriaColor.withOpacity(0.15),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+                spreadRadius: 0,
+              ),
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
                 blurRadius: 8,
-                offset: const Offset(0, 3),
+                offset: const Offset(0, 2),
+                spreadRadius: 0,
               ),
             ],
           ),
-          child: Padding(
-            padding: EdgeInsets.all(adaptive.isMobile ? 12 : 16),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.center,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(adaptive.isMobile ? 18 : 20),
+            child: Stack(
+              fit: StackFit.expand,
               children: [
-                // Imagem/ícone com destaque e overlay suave
-                Container(
-                  width: adaptive.isMobile ? 84 : 100,
-                  height: adaptive.isMobile ? 84 : 100,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(adaptive.isMobile ? 18 : 20),
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        (categoria.cor != null ? _parseColor(categoria.cor!) : AppTheme.restauranteColor)
-                            .withOpacity(0.18),
-                        Colors.white,
-                      ],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.06),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
+                // Imagem de fundo ou gradiente colorido
+                if (hasImage)
+                  Positioned.fill(
+                    child: ColorFiltered(
+                      colorFilter: ColorFilter.mode(
+                        categoriaColor.withOpacity(0.15),
+                        BlendMode.overlay,
                       ),
-                    ],
+                      child: _buildCategoriaImage(categoria, adaptive, fit: BoxFit.cover),
+                    ),
+                  )
+                else
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          categoriaColor.withOpacity(0.25),
+                          categoriaColor.withOpacity(0.1),
+                          Colors.white,
+                        ],
+                        stops: const [0.0, 0.5, 1.0],
+                      ),
+                    ),
                   ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(adaptive.isMobile ? 18 : 20),
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        categoria.tipoRepresentacao == TipoRepresentacaoVisual.imagem &&
-                          categoria.imagemFileName != null
-                            ? _buildCategoriaImage(categoria, adaptive, fit: BoxFit.cover)
-                            : Container(
-                                color: Colors.white,
-                                child: Icon(
-                                  Icons.folder_open_rounded,
-                                  size: adaptive.isMobile ? 36 : 40,
-                                  color: categoria.cor != null
-                                      ? _parseColor(categoria.cor!)
-                                      : AppTheme.restauranteColor,
-                                ),
-                              ),
-                        // Overlay suave para contraste do texto
-                        Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                Colors.black.withOpacity(0.0),
-                                Colors.black.withOpacity(0.15),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
+                
+                // Overlay gradiente sutil no topo
+                Positioned.fill(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withOpacity(0.0),
+                          Colors.black.withOpacity(0.3),
+                        ],
+                        stops: const [0.0, 0.7],
+                      ),
                     ),
                   ),
                 ),
-                // Nome
-                Padding(
-                  padding: EdgeInsets.only(top: adaptive.isMobile ? 10 : 12),
-                  child: Text(
-                    categoria.nome,
-                    style: GoogleFonts.inter(
-                      fontSize: adaptive.isMobile ? 14 : 15,
-                      fontWeight: FontWeight.w700,
-                      color: AppTheme.textPrimary,
-                      height: 1.2,
+                
+                // Conteúdo
+                Positioned.fill(
+                  child: Padding(
+                    padding: EdgeInsets.all(adaptive.isMobile ? 7 : 8),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Ícone ou badge no topo
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (categoria.icone != null && categoria.icone!.isNotEmpty)
+                              Container(
+                                padding: const EdgeInsets.all(3),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.95),
+                                  borderRadius: BorderRadius.circular(7),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.1),
+                                      blurRadius: 3,
+                                      offset: const Offset(0, 1),
+                                    ),
+                                  ],
+                                ),
+                                child: Icon(
+                                  _parseIcon(categoria.icone!),
+                                  size: adaptive.isMobile ? 13 : 14,
+                                  color: categoriaColor,
+                                ),
+                              )
+                            else
+                              Container(
+                                padding: const EdgeInsets.all(3),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.95),
+                                  borderRadius: BorderRadius.circular(7),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.1),
+                                      blurRadius: 3,
+                                      offset: const Offset(0, 1),
+                                    ),
+                                  ],
+                                ),
+                                child: Icon(
+                                  Icons.folder_open_rounded,
+                                  size: adaptive.isMobile ? 13 : 14,
+                                  color: categoriaColor,
+                                ),
+                              ),
+                            
+                            // Badge de quantidade
+                            if (categoria.quantidadeProdutos > 0 || categoria.quantidadeCategoriasFilhas > 0)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF10B981).withOpacity(0.9),
+                                  borderRadius: BorderRadius.circular(8),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(0xFF10B981).withOpacity(0.3),
+                                      blurRadius: 3,
+                                      offset: const Offset(0, 1),
+                                    ),
+                                  ],
+                                ),
+                                child: Text(
+                                  '${categoria.quantidadeProdutos + categoria.quantidadeCategoriasFilhas}',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                    letterSpacing: 0.2,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        
+                        // Nome da categoria - fonte maior
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              categoria.nome,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: adaptive.isMobile ? 13 : 14,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                                letterSpacing: -0.2,
+                                height: 1.15,
+                                shadows: [
+                                  Shadow(
+                                    color: Colors.black.withOpacity(0.5),
+                                    offset: const Offset(0, 1),
+                                    blurRadius: 3,
+                                  ),
+                                ],
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (categoria.quantidadeProdutos > 0) ...[
+                              const SizedBox(height: 2),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.inventory_2_outlined,
+                                    size: 9,
+                                    color: Colors.white.withOpacity(0.9),
+                                  ),
+                                  const SizedBox(width: 2),
+                                  Text(
+                                    '${categoria.quantidadeProdutos}',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 8,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.white.withOpacity(0.9),
+                                      shadows: [
+                                        Shadow(
+                                          color: Colors.black.withOpacity(0.4),
+                                          offset: const Offset(0, 1),
+                                          blurRadius: 2,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
                     ),
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],
@@ -769,7 +947,7 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
                         ),
                         child: Text(
         label,
-                          style: GoogleFonts.inter(
+                          style: GoogleFonts.plusJakartaSans(
           fontSize: adaptive.isMobile ? 13 : 13.5,
           fontWeight: isActive ? FontWeight.w700 : FontWeight.w600,
           color: isActive ? AppTheme.primaryColor : AppTheme.textPrimary,
@@ -795,7 +973,7 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
             const SizedBox(height: 16),
             Text(
               'Nenhum produto encontrado nesta categoria',
-              style: GoogleFonts.inter(
+              style: GoogleFonts.plusJakartaSans(
                 fontSize: 16,
                 color: AppTheme.textSecondary,
               ),
@@ -806,13 +984,13 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
     }
 
     return GridView.builder(
-      padding: EdgeInsets.all(adaptive.isMobile ? 16 : 24),
+      padding: EdgeInsets.all(adaptive.isMobile ? 12 : 16),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: _getCrossAxisCount(adaptive),
-        crossAxisSpacing: adaptive.isMobile ? 12 : 16,
-        mainAxisSpacing: adaptive.isMobile ? 12 : 16,
-        // Altura fixa por item para não variar com a tela
-        mainAxisExtent: adaptive.isMobile ? 210 : 230,
+        crossAxisSpacing: adaptive.isMobile ? 10 : 12,
+        mainAxisSpacing: adaptive.isMobile ? 10 : 12,
+        // Altura fixa mais compacta
+        mainAxisExtent: adaptive.isMobile ? 170 : 190,
       ),
       itemCount: produtos.length,
       itemBuilder: (context, index) {
@@ -881,38 +1059,44 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
                             Center(
                               child: produto.produtoTipoRepresentacao == TipoRepresentacaoVisual.imagem &&
                                       produto.produtoImagemFileName != null
-                                  ? ClipRRect(
-                                      child: Image.network(
-                                        ImageUrlHelper.getThumbnailImageUrl(produto.produtoImagemFileName) ?? '',
-                                        fit: BoxFit.cover,
-                                        width: double.infinity,
-                                        height: double.infinity,
-                                        loadingBuilder: (context, child, loadingProgress) {
-                                          if (loadingProgress == null) return child;
-                                          return Center(
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                              value: loadingProgress.expectedTotalBytes != null
-                                                  ? loadingProgress.cumulativeBytesLoaded /
-                                                      loadingProgress.expectedTotalBytes!
-                                                  : null,
-                                            ),
-                                          );
-                                        },
-                                        errorBuilder: (context, error, stackTrace) {
-                                          return Icon(
-                                            Icons.image_outlined,
-                                            size: adaptive.isMobile ? 40 : 50,
-                                            color: produto.produtoCor != null
-                                                ? _parseColor(produto.produtoCor!)
-                                                : AppTheme.restauranteColor,
-                                          );
-                                        },
+                                  ? ColorFiltered(
+                                      colorFilter: ColorFilter.mode(
+                                        Colors.black.withOpacity(0.05),
+                                        BlendMode.overlay,
+                                      ),
+                                      child: ClipRRect(
+                                        child: Image.network(
+                                          ImageUrlHelper.getThumbnailImageUrl(produto.produtoImagemFileName) ?? '',
+                                          fit: BoxFit.cover,
+                                          width: double.infinity,
+                                          height: double.infinity,
+                                          loadingBuilder: (context, child, loadingProgress) {
+                                            if (loadingProgress == null) return child;
+                                            return Center(
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                value: loadingProgress.expectedTotalBytes != null
+                                                    ? loadingProgress.cumulativeBytesLoaded /
+                                                        loadingProgress.expectedTotalBytes!
+                                                    : null,
+                                              ),
+                                            );
+                                          },
+                                          errorBuilder: (context, error, stackTrace) {
+                                            return Icon(
+                                              Icons.image_outlined,
+                                              size: adaptive.isMobile ? 36 : 42,
+                                              color: produto.produtoCor != null
+                                                  ? _parseColor(produto.produtoCor!)
+                                                  : AppTheme.restauranteColor,
+                                            );
+                                          },
+                                        ),
                                       ),
                                     )
                                   : Icon(
                                       Icons.inventory_2,
-                                      size: adaptive.isMobile ? 40 : 50,
+                                      size: adaptive.isMobile ? 36 : 42,
                                       color: produto.produtoCor != null
                                           ? _parseColor(produto.produtoCor!)
                                           : AppTheme.restauranteColor,
@@ -938,7 +1122,7 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
                                   ),
                                   child: Text(
                                     '$quantidadeNoPedido',
-                                    style: GoogleFonts.inter(
+                                    style: GoogleFonts.plusJakartaSans(
                                       fontSize: 12,
                                       fontWeight: FontWeight.bold,
                                       color: Colors.white,
@@ -955,8 +1139,8 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
                       flex: 4,
                       child: Padding(
                         padding: EdgeInsets.symmetric(
-                          horizontal: adaptive.isMobile ? 10 : 12,
-                          vertical: adaptive.isMobile ? 8 : 10,
+                          horizontal: adaptive.isMobile ? 8 : 10,
+                          vertical: adaptive.isMobile ? 6 : 8,
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -970,8 +1154,8 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
                                 children: [
                                   Text(
                                     produto.produtoNome,
-                                    style: GoogleFonts.inter(
-                                      fontSize: adaptive.isMobile ? 13 : 14,
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: adaptive.isMobile ? 12 : 13,
                                       fontWeight: FontWeight.w600,
                                       color: Colors.grey.shade800,
                                       height: 1.2,
@@ -980,11 +1164,11 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                   if (produto.produtoPrecoVenda != null) ...[
-                                    SizedBox(height: adaptive.isMobile ? 3 : 4),
+                                    SizedBox(height: adaptive.isMobile ? 2 : 3),
                                     Text(
                                       'R\$ ${produto.produtoPrecoVenda!.toStringAsFixed(2)}',
-                                      style: GoogleFonts.inter(
-                                        fontSize: adaptive.isMobile ? 12 : 13,
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: adaptive.isMobile ? 11 : 12,
                                         fontWeight: FontWeight.w600,
                                         color: AppTheme.restauranteColor,
                                       ),
@@ -1031,7 +1215,7 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
                                     Flexible(
                                       child: Text(
                                         quantidadeNoPedido > 0 ? 'Adicionar mais' : 'Adicionar',
-                                        style: GoogleFonts.inter(
+                                        style: GoogleFonts.plusJakartaSans(
                                           fontSize: adaptive.isMobile ? 12 : 13,
                                           fontWeight: FontWeight.w600,
                                           color: quantidadeNoPedido > 0 
@@ -1074,9 +1258,10 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
     final width = adaptive.screenWidth;
 
     if (adaptive.isMobile) return 2;
-    if (width >= 1700) return 6;
-    if (width >= 1440) return 5;
-    if (width >= 1200) return 4;
+    if (width >= 1700) return 7;
+    if (width >= 1440) return 6;
+    if (width >= 1200) return 5;
+    if (width >= 900) return 4;
     return 3;
   }
 
@@ -1172,7 +1357,7 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Text(
                 'Adicionar ${produto.nome}',
-                style: GoogleFonts.inter(
+                style: GoogleFonts.plusJakartaSans(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
                   color: Colors.grey.shade800,
@@ -1184,7 +1369,7 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Text(
                 '${produto.variacoes.length} ${produto.variacoes.length == 1 ? 'opção disponível' : 'opções disponíveis'}',
-                style: GoogleFonts.inter(
+                style: GoogleFonts.plusJakartaSans(
                   fontSize: 14,
                   color: Colors.grey.shade600,
                 ),
@@ -1216,14 +1401,14 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
                     ),
                     title: Text(
                       variacao.nomeCompleto,
-                      style: GoogleFonts.inter(
+                      style: GoogleFonts.plusJakartaSans(
                         fontWeight: FontWeight.w600,
                         fontSize: 15,
                       ),
                     ),
                     subtitle: Text(
                       'R\$ ${variacao.precoEfetivo.toStringAsFixed(2)}',
-                      style: GoogleFonts.inter(
+                      style: GoogleFonts.plusJakartaSans(
                         color: AppTheme.primaryColor,
                         fontWeight: FontWeight.w600,
                         fontSize: 14,
@@ -1269,7 +1454,7 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
                   children: [
                     Text(
                       'Ver mais opções',
-                      style: GoogleFonts.inter(
+                      style: GoogleFonts.plusJakartaSans(
                         color: AppTheme.primaryColor,
                         fontWeight: FontWeight.w600,
                         fontSize: 15,
@@ -1365,54 +1550,72 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeInOut,
-        width: 120,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeInOutCubic,
+        width: 96,
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isSelected ? categoriaColor : Colors.grey.shade300,
-            width: isSelected ? 2.5 : 1,
+            color: isSelected 
+                ? const Color(0xFF10B981) 
+                : const Color(0xFF2563EB).withOpacity(0.2),
+            width: isSelected ? 2.5 : 1.5,
           ),
           boxShadow: isSelected
               ? [
                   BoxShadow(
-                    color: categoriaColor.withOpacity(0.3),
-                    blurRadius: 8,
+                    color: const Color(0xFF10B981).withOpacity(0.35),
+                    blurRadius: 12,
                     offset: const Offset(0, 4),
+                    spreadRadius: 0,
+                  ),
+                  BoxShadow(
+                    color: const Color(0xFF2563EB).withOpacity(0.15),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                    spreadRadius: 0,
                   ),
                 ]
               : [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 4,
+                    color: const Color(0xFF2563EB).withOpacity(0.08),
+                    blurRadius: 6,
                     offset: const Offset(0, 2),
+                    spreadRadius: 0,
                   ),
                 ],
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(12),
           child: Stack(
             children: [
               // Imagem de fundo ou gradiente
               if (imageUrl != null)
                 Positioned.fill(
-                  child: Image.network(
-                    imageUrl,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return _buildGradientBackground(categoriaColor);
-                    },
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      return _buildGradientBackground(categoriaColor);
-                    },
+                  child: ColorFiltered(
+                    colorFilter: ColorFilter.mode(
+                      isSelected 
+                          ? const Color(0xFF10B981).withOpacity(0.15)
+                          : Colors.black.withOpacity(0.05),
+                      BlendMode.overlay,
+                    ),
+                    child: Image.network(
+                      imageUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return _buildGradientBackground(categoriaColor);
+                      },
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        return _buildGradientBackground(categoriaColor);
+                      },
+                    ),
                   ),
                 )
               else
                 _buildGradientBackground(categoriaColor),
               
-              // Overlay escuro para melhorar legibilidade
+              // Overlay gradiente mais sutil e integrado
               Positioned.fill(
                 child: Container(
                   decoration: BoxDecoration(
@@ -1421,17 +1624,38 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
                       end: Alignment.bottomCenter,
                       colors: [
                         Colors.transparent,
-                        Colors.black.withOpacity(0.4),
+                        isSelected
+                            ? const Color(0xFF10B981).withOpacity(0.25)
+                            : Colors.black.withOpacity(0.35),
                       ],
                     ),
                   ),
                 ),
               ),
               
+              // Barra superior verde quando selecionado
+              if (isSelected)
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: 3,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          const Color(0xFF10B981),
+                          const Color(0xFF10B981).withOpacity(0.7),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              
               // Conteúdo
               Positioned.fill(
                 child: Padding(
-                  padding: const EdgeInsets.all(10),
+                  padding: const EdgeInsets.all(7),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1442,29 +1666,43 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
                         children: [
                           if (categoria.icone != null && categoria.icone!.isNotEmpty)
                             Container(
-                              padding: const EdgeInsets.all(6),
+                              padding: const EdgeInsets.all(5),
                               decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.9),
+                                color: Colors.white.withOpacity(isSelected ? 0.95 : 0.85),
                                 borderRadius: BorderRadius.circular(8),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.1),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
                               ),
                               child: Icon(
                                 _parseIcon(categoria.icone!),
-                                size: 18,
-                                color: categoriaColor,
+                                size: 16,
+                                color: isSelected ? const Color(0xFF10B981) : categoriaColor,
                               ),
                             )
                           else
-                            const SizedBox(width: 30),
+                            const SizedBox(width: 28),
                           if (isSelected)
                             Container(
-                              padding: const EdgeInsets.all(4),
+                              padding: const EdgeInsets.all(5),
                               decoration: BoxDecoration(
-                                color: categoriaColor,
+                                color: const Color(0xFF10B981),
                                 shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: const Color(0xFF10B981).withOpacity(0.5),
+                                    blurRadius: 6,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
                               ),
                               child: const Icon(
                                 Icons.check,
-                                size: 12,
+                                size: 11,
                                 color: Colors.white,
                               ),
                             ),
@@ -1477,15 +1715,16 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
                         children: [
                           Text(
                             categoria.nome,
-                            style: GoogleFonts.inter(
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 11.5,
+                              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
                               color: Colors.white,
+                              letterSpacing: -0.2,
                               shadows: [
                                 Shadow(
-                                  color: Colors.black.withOpacity(0.5),
+                                  color: Colors.black.withOpacity(0.6),
                                   offset: const Offset(0, 1),
-                                  blurRadius: 2,
+                                  blurRadius: 3,
                                 ),
                               ],
                             ),
@@ -1493,22 +1732,22 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
                             overflow: TextOverflow.ellipsis,
                           ),
                           if (categoria.quantidadeProdutos > 0) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              '${categoria.quantidadeProdutos} ${categoria.quantidadeProdutos == 1 ? 'produto' : 'produtos'}',
-                              style: GoogleFonts.inter(
-                                fontSize: 10,
-                                color: Colors.white.withOpacity(0.9),
-                                shadows: [
-                                  Shadow(
-                                    color: Colors.black.withOpacity(0.5),
-                                    offset: const Offset(0, 1),
-                                    blurRadius: 2,
-                                  ),
-                                ],
+                            const SizedBox(height: 3),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(isSelected ? 0.25 : 0.2),
+                                borderRadius: BorderRadius.circular(8),
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                              child: Text(
+                                '${categoria.quantidadeProdutos}',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                  letterSpacing: 0.2,
+                                ),
+                              ),
                             ),
                           ],
                         ],
@@ -1554,7 +1793,7 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
             const SizedBox(height: 16),
             Text(
               'Nenhum produto encontrado',
-              style: GoogleFonts.inter(
+              style: GoogleFonts.plusJakartaSans(
                 fontSize: 16,
                 color: Colors.grey.shade600,
               ),
@@ -1562,7 +1801,7 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
             const SizedBox(height: 8),
             Text(
               'Tente buscar com outros termos',
-              style: GoogleFonts.inter(
+              style: GoogleFonts.plusJakartaSans(
                 fontSize: 14,
                 color: Colors.grey.shade400,
               ),
@@ -1636,4 +1875,5 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
     );
   }
 }
+
 

@@ -76,7 +76,7 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
     return AppBar(
       title: Text(
         title,
-        style: GoogleFonts.inter(
+        style: GoogleFonts.plusJakartaSans(
           fontWeight: FontWeight.w700,
         ),
       ),
@@ -103,44 +103,22 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
   ) {
     final padding = adaptive?.getPadding() ?? 16.0;
     final height = compact ? 70.0 : 76.0;
-    
-    // Determina se deve usar gradiente baseado na cor de fundo
-    final useGradient = bgColor == Colors.white || 
-                       bgColor.value == AppTheme.primaryColor.value ||
-                       bgColor.value == 0xFFFFFFFF;
 
     return Container(
       height: height,
       decoration: BoxDecoration(
-        gradient: useGradient
-            ? LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  AppTheme.primaryColor.withOpacity(0.08),
-                  Colors.white,
-                  AppTheme.primaryColor.withOpacity(0.03),
-                ],
-                stops: const [0.0, 0.5, 1.0],
-              )
-            : null,
-        color: useGradient ? null : bgColor,
+        color: bgColor,
         boxShadow: [
           BoxShadow(
-            color: AppTheme.primaryColor.withOpacity(0.08),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-            spreadRadius: 0,
-          ),
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withOpacity(0.04),
             blurRadius: 8,
             offset: const Offset(0, 2),
+            spreadRadius: 0,
           ),
         ],
         border: Border(
           bottom: BorderSide(
-            color: AppTheme.primaryColor.withOpacity(0.1),
+            color: Colors.grey.shade200,
             width: 1,
           ),
         ),
@@ -191,31 +169,15 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
                   children: [
                     Row(
                       children: [
-                        // Ícone decorativo opcional
-                        Container(
-                          width: 4,
-                          height: compact ? 18 : 20,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                AppTheme.primaryColor,
-                                AppTheme.primaryColor.withOpacity(0.5),
-                              ],
-                            ),
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
                         Expanded(
                           child: Text(
                             title,
-                            style: GoogleFonts.inter(
-                              fontSize: compact ? 17 : 18,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: compact ? 20 : 22,
                               fontWeight: FontWeight.w700,
                               color: fgColor,
-                              letterSpacing: -0.3,
+                              letterSpacing: -0.5,
+                              height: 1.2,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -252,7 +214,7 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
                             Flexible(
                               child: Text(
                                 subtitle!,
-                                style: GoogleFonts.inter(
+                                style: GoogleFonts.plusJakartaSans(
                                   fontSize: compact ? 12 : 13,
                                   color: fgColor.withOpacity(0.75),
                                   fontWeight: FontWeight.w500,

@@ -9,6 +9,9 @@ import '../models/local/item_pedido_local.dart';
 import '../models/local/pedido_local.dart';
 import '../models/local/sync_status_pedido.dart';
 import '../models/local/pagamento_pendente_local.dart';
+import '../models/local/mesa_local.dart';
+import '../models/local/comanda_local.dart';
+import '../models/local/configuracao_restaurante_local.dart';
 import '../models/home/home_widget_type.dart';
 import '../models/home/home_widget_config.dart';
 
@@ -86,6 +89,19 @@ class AppDatabase {
         Hive.registerAdapter(PagamentoPendenteLocalAdapter());
         debugPrint('✅ Adapter PagamentoPendenteLocal (typeId: 20) registrado');
       }
+      if (!Hive.isAdapterRegistered(21)) {
+        Hive.registerAdapter(MesaLocalAdapter());
+        debugPrint('✅ Adapter MesaLocal (typeId: 21) registrado');
+      }
+      if (!Hive.isAdapterRegistered(22)) {
+        Hive.registerAdapter(ComandaLocalAdapter());
+        debugPrint('✅ Adapter ComandaLocal (typeId: 22) registrado');
+      }
+      // ConfiguracaoRestauranteLocalAdapter será registrado após executar build_runner
+      // if (!Hive.isAdapterRegistered(23)) {
+      //   Hive.registerAdapter(ConfiguracaoRestauranteLocalAdapter());
+      //   debugPrint('✅ Adapter ConfiguracaoRestauranteLocal (typeId: 23) registrado');
+      // }
     } catch (e) {
       // Se houver erro ao registrar (ex: já registrado), tentar registrar novamente
       debugPrint('⚠️ Erro ao registrar adapters: $e');

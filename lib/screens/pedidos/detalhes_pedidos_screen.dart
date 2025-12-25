@@ -56,6 +56,7 @@ class _DetalhesPedidosScreenState extends State<DetalhesPedidosScreen> {
   List<PedidoListItemDto> _pedidos = [];
   bool _isLoading = true;
   String? _errorMessage;
+  bool _isAbrindoNovoPedido = false; // Proteção contra múltiplos cliques
   final _pedidoRepo = PedidoLocalRepository();
 
   PedidoService get _pedidoService {
@@ -255,19 +256,39 @@ class _DetalhesPedidosScreenState extends State<DetalhesPedidosScreen> {
                   child: SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (context) => AdaptiveLayout(
-                              child: NovoPedidoRestauranteScreen(
-                                mesaId: widget.entidade.tipo == TipoEntidade.mesa ? widget.entidade.id : null,
-                                comandaId: widget.entidade.tipo == TipoEntidade.comanda ? widget.entidade.id : null,
+                      onPressed: _isAbrindoNovoPedido ? null : () async {
+                        // Proteção contra múltiplos cliques
+                        if (_isAbrindoNovoPedido) {
+                          return;
+                        }
+                        
+                        setState(() {
+                          _isAbrindoNovoPedido = true;
+                        });
+                        
+                        try {
+                          await Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) => AdaptiveLayout(
+                                child: NovoPedidoRestauranteScreen(
+                                  mesaId: widget.entidade.tipo == TipoEntidade.mesa ? widget.entidade.id : null,
+                                  comandaId: widget.entidade.tipo == TipoEntidade.comanda ? widget.entidade.id : null,
+                                ),
                               ),
                             ),
-                          ),
-                        ).then((_) {
-                          _loadPedidos(refresh: true);
-                        });
+                          );
+                          
+                          if (mounted) {
+                            _loadPedidos(refresh: true);
+                          }
+                        } finally {
+                          // Sempre libera o flag, mesmo se houver erro
+                          if (mounted) {
+                            setState(() {
+                              _isAbrindoNovoPedido = false;
+                            });
+                          }
+                        }
                       },
                       icon: const Icon(Icons.add_shopping_cart, size: 20),
                       label: Text(

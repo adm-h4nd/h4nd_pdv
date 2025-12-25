@@ -11,7 +11,6 @@ import '../../../data/models/modules/restaurante/comanda_list_item.dart';
 import '../../../data/models/modules/restaurante/configuracao_restaurante_dto.dart';
 import 'components/categoria_navigation_tree.dart';
 import 'components/pedido_resumo_panel.dart';
-import 'dialogs/selecionar_mesa_comanda_dialog.dart';
 
 /// Tela de criação de novo pedido para restaurante
 class NovoPedidoRestauranteScreen extends StatefulWidget {
@@ -26,41 +25,27 @@ class NovoPedidoRestauranteScreen extends StatefulWidget {
     this.isModal = false,
   });
 
-  /// Mostra o novo pedido de forma adaptativa:
-  /// - Mobile: Tela cheia (Navigator.push)
-  /// - Desktop/Tablet: Modal (showDialog)
+  /// SEMPRE mostra como TELA CHEIA (mobile e desktop)
   static Future<bool?> show(
     BuildContext context, {
     String? mesaId,
     String? comandaId,
   }) async {
-    final adaptive = AdaptiveLayoutProvider.of(context);
-    
-    // Mobile: usa tela cheia
-    if (adaptive?.isMobile ?? true) {
-      return await Navigator.of(context).push<bool>(
-        MaterialPageRoute(
-          builder: (context) => AdaptiveLayout(
-            child: NovoPedidoRestauranteScreen(
-              mesaId: mesaId,
-              comandaId: comandaId,
-              isModal: false,
-            ),
+    // SEMPRE usa Navigator.push para tela cheia em TODAS as plataformas
+    return await Navigator.of(context, rootNavigator: true).push<bool>(
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => AdaptiveLayout(
+          child: NovoPedidoRestauranteScreen(
+            mesaId: mesaId,
+            comandaId: comandaId,
+            isModal: false,
           ),
         ),
-      );
-    }
-    
-    // Desktop/Tablet: usa modal
-    return await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AdaptiveLayout(
-        child: NovoPedidoRestauranteScreen(
-          mesaId: mesaId,
-          comandaId: comandaId,
-          isModal: true,
-        ),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
+        opaque: true,
+        fullscreenDialog: false,
       ),
     );
   }
@@ -72,6 +57,7 @@ class NovoPedidoRestauranteScreen extends StatefulWidget {
 class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScreen> {
   MesaListItemDto? _mesa;
   ComandaListItemDto? _comanda;
+  final ValueNotifier<bool> _mostrarBuscaNotifier = ValueNotifier<bool>(false);
 
   void _fecharLoadingSeAberto(BuildContext context) {
     try {
@@ -114,48 +100,14 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
           return;
         }
         
-        final configRestaurante = servicesProvider.configuracaoRestaurante;
+        // Usa os IDs que foram passados - não abre diálogos aqui
+        // A responsabilidade de abrir diálogos de seleção está nos chamadores desta tela
         String? mesaIdFinal = widget.mesaId;
         String? comandaIdFinal = widget.comandaId;
-
-        // Validação: Se configuração é PorComanda e veio de mesa sem comanda, exige seleção de comanda
-        if (configRestaurante != null && 
-            configRestaurante.controlePorComanda && 
-            widget.mesaId != null && 
-            widget.comandaId == null) {
-          // Fecha o loading atual antes de abrir o dialog
-          _fecharLoadingSeAberto(context);
-          
-          if (!mounted) return;
-          
-          // Abre dialog para selecionar comanda (mesa já pré-selecionada)
-          final resultado = await SelecionarMesaComandaDialog.show(
-            context,
-            mesaIdPreSelecionada: widget.mesaId,
-            permiteVendaAvulsa: false, // Não permite venda avulsa quando vem de mesa
-          );
-          
-          if (!mounted) return;
-          
-          if (resultado == null || resultado.comanda == null) {
-            // Usuário cancelou ou não selecionou comanda obrigatória
-            Navigator.of(context).pop(); // Volta para tela anterior
-            return;
-          }
-          
-          comandaIdFinal = resultado.comanda!.id;
-          mesaIdFinal = resultado.mesa?.id ?? widget.mesaId; // Mantém mesa original se não mudou
-          
-          // Mostra loading novamente após seleção
-          if (!mounted) return;
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (context) => const Center(
-              child: CircularProgressIndicator(),
-            ),
-          );
-        }
+        
+        debugPrint('📋 [NovoPedidoRestauranteScreen] Inicializando:');
+        debugPrint('  - MesaId recebido: $mesaIdFinal');
+        debugPrint('  - ComandaId recebido: $comandaIdFinal');
 
         // Busca dados da mesa/comanda se houver
         if (mesaIdFinal != null && mounted) {
@@ -181,18 +133,11 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
           return;
         }
 
-        // Validação final antes de iniciar pedido
-        if (configRestaurante != null && configRestaurante.controlePorComanda && comandaIdFinal == null) {
-          _fecharLoadingSeAberto(context);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Comanda é obrigatória para criar pedido'),
-              backgroundColor: Colors.red,
-            ),
-          );
-          Navigator.of(context).pop(); // Volta para tela anterior
-          return;
-        }
+        // Não há validação obrigatória - tudo é opcional
+
+        debugPrint('📋 [NovoPedidoRestauranteScreen] Chamando iniciarNovoPedido:');
+        debugPrint('  - MesaId: $mesaIdFinal');
+        debugPrint('  - ComandaId: $comandaIdFinal');
 
         final sucesso = await pedidoProvider.iniciarNovoPedido(
           mesaId: mesaIdFinal,
@@ -230,6 +175,12 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
   }
 
   @override
+  void dispose() {
+    _mostrarBuscaNotifier.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final adaptive = AdaptiveLayoutProvider.of(context);
     
@@ -237,9 +188,6 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
     Widget buildContent() {
       return Column(
         children: [
-          // Banner destacado com informações da mesa/comanda (apenas em tela cheia, não no modal)
-          if (!widget.isModal && (_mesa != null || _comanda != null))
-            _buildMesaComandaBanner(),
           // Conteúdo principal
           Expanded(
             child: LayoutBuilder(
@@ -251,6 +199,7 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
                   return Stack(
                     children: [
                       CategoriaNavigationTree(
+                        mostrarBuscaNotifier: _mostrarBuscaNotifier,
                         onProdutoSelected: (produto) {
                           debugPrint('Produto selecionado: ${produto.produtoNome}');
                         },
@@ -288,7 +237,7 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
                                         ),
                                         child: Text(
                                           '${pedidoProvider.quantidadeTotal}',
-                                          style: GoogleFonts.inter(
+                                          style: GoogleFonts.plusJakartaSans(
                                             fontSize: 10,
                                             fontWeight: FontWeight.bold,
                                             color: Colors.white,
@@ -301,7 +250,7 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
                               ),
                               label: Text(
                                 'R\$ ${pedidoProvider.total.toStringAsFixed(2)}',
-                                style: GoogleFonts.inter(
+                                style: GoogleFonts.plusJakartaSans(
                                   fontWeight: FontWeight.bold,
                                   color: Colors.white,
                                 ),
@@ -320,6 +269,7 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
                       Expanded(
                         flex: 7,
                         child: CategoriaNavigationTree(
+                          mostrarBuscaNotifier: _mostrarBuscaNotifier,
                           onProdutoSelected: (produto) {
                             debugPrint('Produto selecionado: ${produto.produtoNome}');
                           },
@@ -367,59 +317,103 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
           ),
           child: Column(
             children: [
-              // Header do modal com informações da mesa/comanda
+              // Header do modal com fundo azul
               Container(
-                padding: EdgeInsets.symmetric(
-                  horizontal: adaptive.isMobile ? 16 : 20,
-                  vertical: adaptive.isMobile ? 12 : 16,
-                ),
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.only(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      const Color(0xFF2563EB), // Azul médio-escuro
+                      const Color(0xFF1E40AF), // Azul escuro
+                    ],
+                  ),
+                  borderRadius: const BorderRadius.only(
                     topLeft: Radius.circular(20),
                     topRight: Radius.circular(20),
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
+                      color: const Color(0xFF2563EB).withOpacity(0.2),
+                      blurRadius: 20,
+                      offset: const Offset(0, 4),
                     ),
                   ],
                 ),
-                child: Row(
+                child: Stack(
                   children: [
-                    // Ícone
-                    Icon(
-                      Icons.add_shopping_cart,
-                      color: AppTheme.primaryColor,
-                      size: 24,
-                    ),
-                    SizedBox(width: adaptive.isMobile ? 10 : 12),
-                    // Título e informações da mesa/comanda
-                    Expanded(
-                      child: Row(
-                        children: [
-                          Text(
-                            'Novo Pedido',
-                            style: GoogleFonts.inter(
-                              fontSize: adaptive.isMobile ? 16 : 18,
-                              fontWeight: FontWeight.w700,
-                              color: AppTheme.textPrimary,
-                            ),
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      height: 3,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF10B981), // Verde vibrante
+                          borderRadius: const BorderRadius.only(
+                            topLeft: Radius.circular(20),
+                            topRight: Radius.circular(20),
                           ),
-                          if (_mesa != null || _comanda != null) ...[
-                            SizedBox(width: adaptive.isMobile ? 12 : 16),
-                            _buildMesaComandaHeaderCompact(),
-                          ],
-                        ],
+                        ),
                       ),
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: AppTheme.textPrimary, size: 22),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      onPressed: () => Navigator.of(context).pop(false),
+                    Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: adaptive.isMobile ? 20 : 24,
+                        vertical: adaptive.isMobile ? 18 : 22,
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'Novo Pedido',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white,
+                                    letterSpacing: -0.3,
+                                  ),
+                                ),
+                                if (_mesa != null || _comanda != null) ...[
+                                  const SizedBox(height: 6),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 4,
+                                    children: _buildMesaComandaBadges(),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: () => Navigator.of(context).pop(false),
+                              borderRadius: BorderRadius.circular(10),
+                              child: Container(
+                                padding: const EdgeInsets.all(9),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: Colors.white.withOpacity(0.3),
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Icon(
+                                  Icons.close_rounded,
+                                  size: 18,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -437,14 +431,251 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
     // Tela cheia: usa Scaffold (mobile)
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
-      appBar: AppHeader(
-        title: 'Novo Pedido',
-        subtitle: 'Em edição',
-        backgroundColor: Colors.white,
-        foregroundColor: AppTheme.textPrimary,
-      ),
+      appBar: _buildModernHeader(context),
       body: buildContent(),
     );
+  }
+
+  /// Cabeçalho com design moderno e profissional
+  PreferredSizeWidget _buildModernHeader(BuildContext context) {
+    final adaptive = AdaptiveLayoutProvider.of(context);
+    final padding = adaptive?.getPadding() ?? 16.0;
+
+    return PreferredSize(
+      preferredSize: const Size.fromHeight(100),
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              const Color(0xFF2563EB), // Azul médio-escuro
+              const Color(0xFF1E40AF), // Azul escuro
+            ],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF2563EB).withOpacity(0.2),
+              blurRadius: 20,
+              offset: const Offset(0, 4),
+              spreadRadius: 0,
+            ),
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 10,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Stack(
+          children: [
+            // Barra decorativa superior verde
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: 3,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10B981), // Verde vibrante
+                ),
+              ),
+            ),
+            SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: padding, vertical: 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        // Botão voltar com estilo moderno (branco)
+                        Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () => Navigator.of(context).maybePop(),
+                            borderRadius: BorderRadius.circular(10),
+                            child: Container(
+                              padding: const EdgeInsets.all(9),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.3),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Icon(
+                                Icons.arrow_back_ios_new_rounded,
+                                size: 16,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        
+                        // Conteúdo principal
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Novo Pedido',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                  letterSpacing: -0.3,
+                                  height: 1.2,
+                                ),
+                              ),
+                              if (_mesa != null || _comanda != null) ...[
+                                const SizedBox(height: 6),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 4,
+                                  children: _buildMesaComandaBadges(),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        
+                        const SizedBox(width: 12),
+                        
+                        // Ações (botão de busca em mobile)
+                        ..._buildHeaderActions(context),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Retorna lista de badges de mesa/comanda com cores do sistema (branco e verde)
+  List<Widget> _buildMesaComandaBadges() {
+    final badges = <Widget>[];
+    final verdeSistema = const Color(0xFF10B981);
+    
+    if (_mesa != null) {
+      badges.add(
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.25),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: Colors.white.withOpacity(0.4),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.table_restaurant_rounded,
+                size: 10,
+                color: Colors.white,
+              ),
+              const SizedBox(width: 5),
+              Text(
+                'Mesa ${_mesa!.numero}',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                  letterSpacing: 0.1,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    
+    if (_comanda != null) {
+      badges.add(
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: verdeSistema.withOpacity(0.9),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: verdeSistema,
+              width: 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.receipt_long_rounded,
+                size: 10,
+                color: Colors.white,
+              ),
+              const SizedBox(width: 5),
+              Text(
+                'Comanda ${_comanda!.numero}',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                  letterSpacing: 0.1,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    
+    return badges;
+  }
+
+  /// Retorna ações do cabeçalho (botão de busca em mobile)
+  List<Widget> _buildHeaderActions(BuildContext context) {
+    final adaptive = AdaptiveLayoutProvider.of(context);
+    final isMobile = adaptive?.isMobile ?? true;
+    
+    if (!isMobile) {
+      return []; // Desktop não precisa do botão, busca sempre visível
+    }
+    
+    return [
+      Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            _mostrarBuscaNotifier.value = !_mostrarBuscaNotifier.value;
+          },
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            padding: const EdgeInsets.all(9),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.3),
+                width: 1,
+              ),
+            ),
+            child: Icon(
+              Icons.search_rounded,
+              size: 18,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      ),
+    ];
   }
 
   /// Header compacto para modal mostrando mesa/comanda
@@ -474,7 +705,7 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
                 const SizedBox(width: 4),
                 Text(
                   'Mesa ${_mesa!.numero}',
-                  style: GoogleFonts.inter(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
                     color: AppTheme.primaryColor,
@@ -515,7 +746,7 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
                 const SizedBox(width: 4),
                 Text(
                   'Comanda ${_comanda!.numero}',
-                  style: GoogleFonts.inter(
+                  style: GoogleFonts.plusJakartaSans(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
                     color: AppTheme.successColor,
@@ -533,7 +764,7 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
   Widget _buildMesaComandaBanner() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border(
@@ -544,9 +775,9 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 2,
+            offset: const Offset(0, 1),
           ),
         ],
       ),
@@ -562,10 +793,10 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
           ],
           if (_mesa != null && _comanda != null)
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Container(
                 width: 1,
-                height: 24,
+                height: 20,
                 color: Colors.grey.shade300,
               ),
             ),
@@ -587,10 +818,10 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
     required Color color,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: color.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(6),
         border: Border.all(
           color: color.withOpacity(0.2),
           width: 1,
@@ -601,14 +832,14 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
         children: [
           Icon(
             icon,
-            size: 18,
+            size: 14,
             color: color,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
           Text(
             label,
-            style: GoogleFonts.inter(
-              fontSize: 15,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 13,
               fontWeight: FontWeight.w600,
               color: color,
             ),
@@ -632,11 +863,12 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
       return;
     }
 
-    // Mostra loading
+    // Mostra loading usando rootNavigator para garantir que aparece sobre tudo
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Center(
+      useRootNavigator: true,
+      builder: (dialogContext) => const Center(
         child: CircularProgressIndicator(),
       ),
     );
@@ -647,8 +879,8 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
 
       if (!context.mounted) return;
 
-      // Fecha o loading
-      Navigator.of(context).pop();
+      // Fecha o loading usando rootNavigator
+      Navigator.of(context, rootNavigator: true).pop();
 
       if (pedidoIdSalvo != null) {
         // A sincronização é automática via listener do Hive
@@ -664,7 +896,7 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
                 Expanded(
                   child: Text(
                     'Pedido finalizado! Sincronizando...',
-                    style: GoogleFonts.inter(),
+                    style: GoogleFonts.plusJakartaSans(),
                   ),
                 ),
               ],
@@ -676,9 +908,10 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
         );
 
         // Volta para a tela anterior após um breve delay
+        // Usa rootNavigator: true porque a tela foi aberta com rootNavigator: true
         await Future.delayed(const Duration(milliseconds: 500));
-        if (context.mounted) {
-          Navigator.of(context).pop();
+        if (context.mounted && Navigator.of(context, rootNavigator: true).canPop()) {
+          Navigator.of(context, rootNavigator: true).pop(true);
         }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -691,8 +924,8 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
     } catch (e) {
       if (!context.mounted) return;
       
-      // Fecha o loading se ainda estiver aberto
-      Navigator.of(context).pop();
+      // Fecha o loading se ainda estiver aberto usando rootNavigator
+      Navigator.of(context, rootNavigator: true).pop();
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -704,15 +937,18 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
   }
 
   void _mostrarResumoPedidoMobile(BuildContext context) {
+    // Salva o contexto da tela principal antes de abrir o bottom sheet
+    final mainContext = context;
+    
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
+      builder: (bottomSheetContext) => DraggableScrollableSheet(
+        initialChildSize: 0.8,
         minChildSize: 0.5,
-        maxChildSize: 0.95,
-        builder: (context, scrollController) => Container(
+        maxChildSize: 0.9,
+        builder: (sheetContext, scrollController) => Container(
           decoration: const BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -733,8 +969,10 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
               Expanded(
                 child: PedidoResumoPanel(
                   onFinalizarPedido: () {
-                    Navigator.of(context).pop();
-                    _finalizarPedido(context);
+                    // Fecha o bottom sheet usando o contexto do bottom sheet
+                    Navigator.of(bottomSheetContext).pop();
+                    // Usa o contexto da tela principal para finalizar
+                    _finalizarPedido(mainContext);
                   },
                   onLimparPedido: () {
                     // O botão de limpar já está no header do painel

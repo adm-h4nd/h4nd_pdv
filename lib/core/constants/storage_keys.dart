@@ -16,6 +16,9 @@ class StorageKeys {
   // Preferências
   static const String themeMode = 'mx-cloud-theme-mode';
   static const String language = 'mx-cloud-language';
+  
+  // Configuração do Servidor
+  static const String serverUrl = 'mx-cloud-server-url';
 }
 
 

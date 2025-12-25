@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'core/config/env_config.dart';
+import 'core/config/server_config_service.dart';
 import 'core/storage/preferences_service.dart';
 import 'core/storage/secure_storage_service.dart';
 import 'data/services/core/auth_service.dart';
@@ -13,6 +14,7 @@ import 'presentation/providers/pedido_provider.dart';
 import 'core/theme/app_theme.dart';
 import 'core/adaptive_layout/adaptive_layout.dart';
 import 'screens/splash/splash_screen.dart';
+import 'presentation/screens/server_config/server_config_screen.dart';
 import 'core/deeplink/deeplink_manager.dart';
 import 'core/deeplink/deeplink_handler.dart';
 import 'core/payment/payment_service.dart';
@@ -26,7 +28,11 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+  await initializeApp();
+}
+
+/// Função helper para inicializar o app (pode ser chamada novamente após configurar servidor)
+Future<void> initializeApp() async {
   // Remove a splash screen branca do Flutter
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
@@ -37,6 +43,26 @@ void main() async {
   
   // Inicializa serviços
   await PreferencesService.init();
+  
+  // Verifica se o servidor está configurado
+  final isServerConfigured = ServerConfigService.isConfigured();
+  
+  // Se não estiver configurado, inicia direto na tela de configuração
+  if (!isServerConfigured) {
+    runApp(
+      MaterialApp(
+        title: 'MX Cloud PDV',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.lightTheme,
+        darkTheme: AppTheme.darkTheme,
+        themeMode: ThemeMode.light,
+        home: const AdaptiveLayout(
+          child: ServerConfigScreen(allowBack: false),
+        ),
+      ),
+    );
+    return;
+  }
   
   // Inicializa Hive (banco de dados local)
   await AppDatabase.init();

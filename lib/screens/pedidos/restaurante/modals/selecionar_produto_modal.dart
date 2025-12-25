@@ -73,32 +73,21 @@ class SelecionarProdutoModal extends StatefulWidget {
     required String produtoNome,
     double? precoBase,
   }) async {
-    final isMobile = MediaQuery.of(context).size.width < 600;
-    
-    if (isMobile) {
-      // Em mobile, usa Navigator.push para tela cheia
-      return await Navigator.of(context).push<ProdutoSelecionadoResult>(
-        MaterialPageRoute(
-          fullscreenDialog: true,
-          builder: (context) => SelecionarProdutoModal(
-            produtoId: produtoId,
-            produtoNome: produtoNome,
-            precoBase: precoBase,
-          ),
-        ),
-      );
-    } else {
-      // Em desktop, usa Dialog
-      return await showDialog<ProdutoSelecionadoResult>(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => SelecionarProdutoModal(
+    // SEMPRE abre como TELA CHEIA usando PageRouteBuilder
+    return await Navigator.of(context, rootNavigator: true).push<ProdutoSelecionadoResult>(
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => SelecionarProdutoModal(
           produtoId: produtoId,
           produtoNome: produtoNome,
           precoBase: precoBase,
         ),
-      );
-    }
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
+        opaque: true,
+        fullscreenDialog: false,
+      ),
+    );
   }
 }
 
@@ -110,6 +99,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
   final Map<String, List<String>> _selecoesAtributos = {}; // Map<atributoId, List<valorId>>
   final Map<String, Map<String, double>> _proporcoesAtributos = {}; // Map<atributoId, Map<valorId, proporcao>>
   final Map<String, bool> _atributosExpandidos = {}; // Map<atributoId, bool> - controla qual atributo está expandido
+  final Map<String, bool> _proporcoesExpandidas = {}; // Map<atributoId, bool> - controla se as proporções estão expandidas
   int _quantidade = 1;
   int _atributoAtualIndex = 0; // Índice do atributo sendo visualizado no layout compacto
   
@@ -983,7 +973,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
     }
 
     if (mounted) {
-    Navigator.of(context).pop(ProdutoSelecionadoResult(itens: itens));
+      Navigator.of(context, rootNavigator: true).pop(ProdutoSelecionadoResult(itens: itens));
     }
   }
 
@@ -994,32 +984,34 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
     Map<String, double>? proporcoes,
     Map<String, List<String>>? valoresAtributosSelecionados,
   ) async {
-    final isMobile = MediaQuery.of(context).size.width < 600;
-    
-    return await showDialog<ProdutoSelecionadoResult>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => _PersonalizarItensModal(
-        produto: _produto!,
-        quantidade: _quantidade,
-        variacao: variacao,
-        preco: preco,
-        proporcoes: proporcoes,
-        valoresAtributosSelecionados: valoresAtributosSelecionados,
-        produtoId: widget.produtoId,
-        produtoNome: widget.produtoNome,
+    // SEMPRE abre como TELA CHEIA usando PageRouteBuilder
+    return await Navigator.of(context, rootNavigator: true).push<ProdutoSelecionadoResult>(
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => _PersonalizarItensModal(
+          produto: _produto!,
+          quantidade: _quantidade,
+          variacao: variacao,
+          preco: preco,
+          proporcoes: proporcoes,
+          valoresAtributosSelecionados: valoresAtributosSelecionados,
+          produtoId: widget.produtoId,
+          produtoNome: widget.produtoNome,
+        ),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
+        opaque: true,
+        fullscreenDialog: false,
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final isMobile = MediaQuery.of(context).size.width < 600;
-    
     final content = Container(
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: Colors.white,
-        borderRadius: isMobile ? BorderRadius.zero : BorderRadius.circular(20),
+        borderRadius: BorderRadius.zero,
       ),
       child: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -1028,109 +1020,36 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
               : _buildConteudoPrincipal(),
     );
     
-    if (isMobile) {
-      return Scaffold(
+    // SEMPRE retorna Scaffold ocupando TELA CHEIA
+    return Scaffold(
+      backgroundColor: Colors.white,
+      extendBodyBehindAppBar: false,
+      appBar: AppBar(
         backgroundColor: Colors.white,
-        appBar: AppBar(
-          backgroundColor: Colors.white,
-          elevation: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.close, color: Colors.black87),
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                widget.produtoNome,
-                style: GoogleFonts.inter(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
-              ),
-              if (_produto?.descricao != null && _produto!.descricao!.isNotEmpty)
-                Text(
-                  _produto!.descricao!,
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    color: Colors.grey.shade600,
-                    fontWeight: FontWeight.normal,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-            ],
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.close, color: Colors.black87),
+          onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
+        ),
+        title: Text(
+          widget.produtoNome,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Colors.black87,
           ),
         ),
-        body: content,
-      );
-    }
-    
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 700, maxHeight: 900),
-        child: content,
       ),
+      body: content,
     );
   }
 
   Widget _buildConteudoPrincipal() {
-    final isMobile = MediaQuery.of(context).size.width < 600;
-    
+    // Conteúdo com imagem e seleções - Layout compacto
     return Column(
-      mainAxisSize: isMobile ? MainAxisSize.max : MainAxisSize.min,
       children: [
-            // Header (apenas para desktop)
-                      if (!isMobile) ...[
-                        Padding(
-                          padding: const EdgeInsets.all(20),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          widget.produtoNome,
-                                          style: GoogleFonts.inter(
-                                            fontSize: 20,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        if (_produto?.descricao != null && _produto!.descricao!.isNotEmpty) ...[
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            _produto!.descricao!,
-                                            style: GoogleFonts.inter(
-                                              fontSize: 14,
-                                              color: Colors.grey.shade600,
-                                              height: 1.4,
-                                            ),
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.close),
-                                    onPressed: () => Navigator.of(context).pop(),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                        const Divider(height: 1),
-                      ],
-                      // Conteúdo com imagem e seleções - Layout compacto
-              Expanded(
-                        child: LayoutBuilder(
+        Expanded(
+          child: LayoutBuilder(
                           builder: (context, constraints) {
                             final isWide = constraints.maxWidth > 600;
                             final temVariacoes = _produto!.temVariacoes && _produto!.atributos.isNotEmpty;
@@ -1148,34 +1067,15 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
                                     Center(
                                       child: _buildImagemOuPlaceholder(isWide ? 350 : 280),
                                     ),
-                                    const SizedBox(height: 24),
-                                    // Descrição com mais destaque
-                                    if (_produto!.descricao != null && _produto!.descricao!.isNotEmpty) ...[
-                                      Container(
-                                        width: double.infinity,
-                                        padding: const EdgeInsets.all(20),
-                                        decoration: BoxDecoration(
-                                          color: Colors.grey.shade50,
-                                          borderRadius: BorderRadius.circular(12),
-                                        ),
-                                        child: Text(
-                                          _produto!.descricao!,
-                                          style: GoogleFonts.inter(
-                                            fontSize: 15,
-                                            color: Colors.grey.shade700,
-                                            height: 1.6,
-                                          ),
-                                          textAlign: TextAlign.center,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 24),
-                                    ],
+                                    const SizedBox(height: 20),
+                                    // Informações do produto (descrição, preço, quantidade)
+                                    _buildInfoProduto(),
                                   ],
                                 ),
                               );
                             }
                             
-                            // Layout com variações (original)
+                            // Layout com variações
                             return Column(
                               children: [
                                 Expanded(
@@ -1194,15 +1094,39 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
                                       Expanded(
                                         child: Column(
                                           children: [
-                                            // Imagem no topo se não for wide ou não tiver imagem
-                                            if ((!isWide || !temImagem)) ...[
+                                            // Cabeçalho compacto mobile: imagem pequena + descrição lado a lado
+                                            if (!isWide) ...[
                                               Padding(
-                                                padding: const EdgeInsets.all(20),
-                                                child: Center(
-                                                  child: _buildImagemOuPlaceholder(180),
+                                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                                child: Row(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    // Imagem pequena
+                                                    if (temImagem) ...[
+                                                      _buildImagemOuPlaceholder(60),
+                                                      const SizedBox(width: 12),
+                                                    ],
+                                                    // Descrição ao lado
+                                                    Expanded(
+                                                      child: _produto!.descricao != null && _produto!.descricao!.isNotEmpty
+                                                          ? Text(
+                                                              _produto!.descricao!,
+                                                              style: GoogleFonts.plusJakartaSans(
+                                                                fontSize: 13,
+                                                                color: Colors.grey.shade700,
+                                                                height: 1.3,
+                                                              ),
+                                                              maxLines: 2,
+                                                              overflow: TextOverflow.ellipsis,
+                                                            )
+                                                          : const SizedBox.shrink(),
+                                                    ),
+                                                  ],
                                                 ),
                                               ),
                                             ],
+                                            // Informações do produto (preço, quantidade) - mobile não mostra descrição aqui
+                                            _buildInfoProduto(isMobile: !isWide),
                                             // Conteúdo de seleção com altura limitada
                                             Expanded(
                                               child: _buildConteudoCompacto(),
@@ -1213,144 +1137,143 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
                                     ],
                                   ),
                                 ),
-                                // Rodapé de navegação (apenas se tiver variações)
-                                if (temVariacoes) _buildRodapeNavegacao(),
                               ],
                             );
                           },
                         ),
-                      ),
-                      // Footer com ações
-              Container(
-                        padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                          color: Colors.grey.shade50,
-                          borderRadius: const BorderRadius.only(
-                            bottomLeft: Radius.circular(20),
-                            bottomRight: Radius.circular(20),
+        ),
+        // Footer com ações (apenas preço e botão)
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border(
+              top: BorderSide(color: Colors.grey.shade200, width: 1),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, -2),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              // Preço ou mensagem de erro
+              Expanded(
+                child: Builder(
+                  builder: (context) {
+                    // Verificar primeiro se atributos estão incompletos
+                    if (_atributosIncompletos) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Selecione os atributos',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.orange.shade700,
+                            ),
+                          ),
+                          Text(
+                            'Complete as seleções',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 11,
+                              color: Colors.orange.shade600,
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+                    
+                    // Verificar se há combinações indisponíveis
+                    if (_combinacoesIndisponiveis != null && _combinacoesIndisponiveis!.isNotEmpty) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Combinação indisponível',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.red.shade700,
+                            ),
+                          ),
+                          Text(
+                            'Ajuste as seleções',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 11,
+                              color: Colors.red.shade600,
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+                    
+                    // Calcular e exibir preço
+                    final preco = _calcularPrecoComProporcoes();
+                    if (preco == null) {
+                      return Text(
+                        'Preço não disponível',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.red.shade700,
+                        ),
+                      );
+                    }
+                    
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Total',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'R\$ ${(preco * _quantidade).toStringAsFixed(2)}',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.primaryColor,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(width: 16),
+              // Botão confirmar
+              ElevatedButton(
+                onPressed: _podeConfirmar() ? _confirmar : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryColor,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                child: Row(
-                  children: [
-                            // Quantidade
-                            Row(
-                              children: [
-                                IconButton(
-                                  icon: const Icon(Icons.remove),
-                                  onPressed: _quantidade > 1
-                                      ? () => _atualizarQuantidade(_quantidade - 1)
-                                      : null,
-                                ),
-                                Text(
-                                  '$_quantidade',
-                        style: GoogleFonts.inter(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.add),
-                                  onPressed: () => _atualizarQuantidade(_quantidade + 1),
-                                ),
-                              ],
-                            ),
-                            const Spacer(),
-                            // Preço ou mensagem de erro
-                            Builder(
-                              builder: (context) {
-                                // Verificar primeiro se atributos estão incompletos
-                                if (_atributosIncompletos) {
-                                  return Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.end,
-                                      children: [
-                            Text(
-                                          'Selecione os atributos',
-                                          style: GoogleFonts.inter(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w600,
-                                            color: Colors.orange.shade700,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          'Complete as seleções',
-                                          style: GoogleFonts.inter(
-                                            fontSize: 12,
-                                            color: Colors.orange.shade600,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                }
-                                
-                                // Verificar se há combinações indisponíveis
-                                if (_combinacoesIndisponiveis != null && _combinacoesIndisponiveis!.isNotEmpty) {
-                                  return Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.end,
-                                      children: [
-                                        Text(
-                                          'Combinação indisponível',
-                                          style: GoogleFonts.inter(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w600,
-                                            color: Colors.red.shade700,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          'Ajuste as seleções',
-                                          style: GoogleFonts.inter(
-                                            fontSize: 12,
-                                            color: Colors.red.shade600,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                }
-                                
-                                // Calcular e exibir preço
-                                final preco = _calcularPrecoComProporcoes();
-                                if (preco == null) {
-                                  return Text(
-                                    'Preço não disponível',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.red.shade700,
-                                    ),
-                                  );
-                                }
-                                
-                                return Text(
-                                  'R\$ ${(preco * _quantidade).toStringAsFixed(2)}',
-                              style: GoogleFonts.inter(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: AppTheme.primaryColor,
-                              ),
-                                );
-                              },
-                            ),
-                            const SizedBox(width: 16),
-                            // Botão confirmar
-                    ElevatedButton(
-                              onPressed: _podeConfirmar() ? _confirmar : null,
-                      style: ElevatedButton.styleFrom(
-                                backgroundColor: AppTheme.primaryColor,
-                        foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                      ),
-                              child: const Text('Adicionar'),
-                        ),
-                          ],
-                      ),
-                    ),
-                  ],
-                );
+                child: Text(
+                  'Adicionar',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildListaItens() {
@@ -1362,7 +1285,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
           children: [
             Text(
               'Itens ($_quantidade)',
-              style: GoogleFonts.inter(
+              style: GoogleFonts.plusJakartaSans(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
               ),
@@ -1421,7 +1344,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
               const SizedBox(width: 8),
               Text(
                 'Personalizar itens ($_quantidade)',
-                style: GoogleFonts.inter(
+                style: GoogleFonts.plusJakartaSans(
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
                   color: Colors.blue.shade900,
@@ -1432,7 +1355,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
           const SizedBox(height: 12),
           Text(
             'Personalize cada item individualmente removendo componentes da composição:',
-            style: GoogleFonts.inter(
+            style: GoogleFonts.plusJakartaSans(
               fontSize: 13,
               color: Colors.blue.shade800,
             ),
@@ -1486,7 +1409,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
                     child: Center(
                       child: Text(
                         '${indexItem + 1}',
-                        style: GoogleFonts.inter(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
                           color: Colors.blue.shade900,
@@ -1498,7 +1421,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
                   Expanded(
                     child: Text(
                       'Item ${indexItem + 1}',
-                      style: GoogleFonts.inter(
+                      style: GoogleFonts.plusJakartaSans(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                       ),
@@ -1513,7 +1436,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
                       ),
                       child: Text(
                         'Personalizado',
-                        style: GoogleFonts.inter(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
                           color: Colors.orange.shade900,
@@ -1555,7 +1478,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
       children: [
         Text(
           'Remover itens',
-          style: GoogleFonts.inter(
+          style: GoogleFonts.plusJakartaSans(
             fontSize: 14,
             fontWeight: FontWeight.w600,
             color: Colors.grey.shade700,
@@ -1600,7 +1523,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
                     Expanded(
                       child: Text(
                         componente.componenteNome,
-                        style: GoogleFonts.inter(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 14,
                           fontWeight: isRemovido ? FontWeight.w600 : FontWeight.normal,
                           color: isRemovido ? Colors.red.shade700 : Colors.grey.shade800,
@@ -1621,6 +1544,148 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
           );
         }).toList(),
       ],
+    );
+  }
+
+  Widget _buildInfoProduto({bool isMobile = false}) {
+    final precoUnitario = _calcularPrecoComProporcoes();
+    
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Nome e descrição (apenas no desktop, mobile já mostra no cabeçalho)
+          if (!isMobile && _produto!.descricao != null && _produto!.descricao!.isNotEmpty) ...[
+            Text(
+              _produto!.descricao!,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 14,
+                color: Colors.grey.shade700,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+          // Preço unitário e quantidade na mesma linha
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Preço unitário
+              if (precoUnitario != null)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Preço unitário',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 11,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'R\$ ${precoUnitario.toStringAsFixed(2)}',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.primaryColor,
+                      ),
+                    ),
+                  ],
+                )
+              else
+                const SizedBox.shrink(),
+              // Controle de quantidade
+              Row(
+                children: [
+                  Text(
+                    'Quantidade: ',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13,
+                      color: Colors.grey.shade700,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: _quantidade > 1
+                                ? () => _atualizarQuantidade(_quantidade - 1)
+                                : null,
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(10),
+                              bottomLeft: Radius.circular(10),
+                            ),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              child: Icon(
+                                Icons.remove,
+                                size: 18,
+                                color: _quantidade > 1 
+                                    ? Colors.grey.shade700 
+                                    : Colors.grey.shade400,
+                              ),
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            border: Border.symmetric(
+                              vertical: BorderSide(
+                                color: Colors.grey.shade300,
+                                width: 1,
+                              ),
+                            ),
+                          ),
+                          child: Text(
+                            '$_quantidade',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.grey.shade800,
+                            ),
+                          ),
+                        ),
+                        Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () => _atualizarQuantidade(_quantidade + 1),
+                            borderRadius: const BorderRadius.only(
+                              topRight: Radius.circular(10),
+                              bottomRight: Radius.circular(10),
+                            ),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              child: Icon(
+                                Icons.add,
+                                size: 18,
+                                color: Colors.grey.shade700,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -1694,7 +1759,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Text(
               'Produto sem foto',
-              style: GoogleFonts.inter(
+              style: GoogleFonts.plusJakartaSans(
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
                 color: Colors.grey.shade600,
@@ -1740,8 +1805,8 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
       children: [
         // Tabs horizontais para navegar entre atributos
         Container(
-          height: 60,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          height: 52,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             itemCount: atributosOrdenados.length,
@@ -1749,21 +1814,43 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
               final atributo = atributosOrdenados[index];
               final isSelected = index == _atributoAtualIndex;
               final isCompletoAtributo = _atributoCompleto(atributo);
+              final selecoesAtributo = _selecoesAtributos[atributo.id] ?? [];
+              
+              // Obter nomes dos valores selecionados
+              String? valoresSelecionadosTexto;
+              if (selecoesAtributo.isNotEmpty) {
+                final nomesValores = selecoesAtributo.map((valorId) {
+                  try {
+                    final valor = atributo.valores.firstWhere(
+                      (v) => v.atributoValorId == valorId,
+                    );
+                    return valor.nome;
+                  } catch (e) {
+                    return null;
+                  }
+                }).where((nome) => nome != null).cast<String>().toList();
+                
+                if (nomesValores.isNotEmpty) {
+                  valoresSelecionadosTexto = nomesValores.length > 1
+                      ? '${nomesValores.first} +${nomesValores.length - 1}'
+                      : nomesValores.first;
+                }
+              }
               
               return Padding(
-                padding: const EdgeInsets.only(right: 8),
+                padding: const EdgeInsets.only(right: 6),
                 child: InkWell(
                   onTap: () => setState(() => _atributoAtualIndex = index),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(10),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
                       color: isSelected 
                           ? AppTheme.primaryColor 
                           : (isCompletoAtributo 
                               ? AppTheme.successColor.withOpacity(0.1)
                               : Colors.grey.shade100),
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(10),
                       border: Border.all(
                         color: isSelected 
                             ? AppTheme.primaryColor 
@@ -1773,29 +1860,48 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
                         width: isSelected ? 2 : 1,
                       ),
                     ),
-                    child: Row(
+                    child: Column(
                       mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          atributo.nome,
-                          style: GoogleFonts.inter(
-                            fontSize: 14,
-                            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                            color: isSelected 
-                                ? Colors.white 
-                                : (isCompletoAtributo 
-                                    ? AppTheme.successColor 
-                                    : Colors.black87),
-                          ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              atributo.nome,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 12,
+                                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                                color: isSelected 
+                                    ? Colors.white 
+                                    : (isCompletoAtributo 
+                                        ? Colors.grey.shade800 // Mesma cor do valor selecionado para contraste
+                                        : Colors.black87),
+                              ),
+                            ),
+                            if (valoresSelecionadosTexto != null) ...[
+                              const SizedBox(width: 4),
+                              Text(
+                                ': $valoresSelecionadosTexto',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                  color: isSelected 
+                                      ? Colors.white.withOpacity(0.95)
+                                      : Colors.grey.shade800, // Cor escura para melhor contraste
+                                ),
+                              ),
+                            ],
+                            if (isCompletoAtributo) ...[
+                              const SizedBox(width: 4),
+                              Icon(
+                                Icons.check_circle,
+                                size: 14,
+                                color: isSelected ? Colors.white : AppTheme.successColor,
+                              ),
+                            ],
+                          ],
                         ),
-                        if (isCompletoAtributo) ...[
-                          const SizedBox(width: 6),
-                          Icon(
-                            Icons.check_circle,
-                            size: 16,
-                            color: isSelected ? Colors.white : AppTheme.successColor,
-                          ),
-                        ],
                       ],
                     ),
                   ),
@@ -1807,166 +1913,88 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
         const Divider(height: 1),
         // Conteúdo do atributo atual com scroll limitado
         Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Header do atributo
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Text(
-                                atributoAtual.nome,
-                                style: GoogleFonts.inter(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              if (isCompleto) ...[
-                                const SizedBox(width: 8),
-                                Icon(
-                                  Icons.check_circle,
-                                  size: 20,
-                                  color: AppTheme.successColor,
-                                ),
-                              ],
-                            ],
+          child: Column(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Info de seleção proporcional (se houver)
+                      if (atributoAtual.permiteSelecaoProporcional) ...[
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.grey.shade200),
                           ),
-                          if (atributoAtual.descricao != null) ...[
-                            const SizedBox(height: 4),
-                            Text(
-                              atributoAtual.descricao!,
-                              style: GoogleFonts.inter(
-                                fontSize: 12,
-                                color: Colors.grey.shade600,
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.info_outline,
+                                size: 12,
+                                color: AppTheme.primaryColor,
                               ),
-                            ),
-                          ],
-                          if (atributoAtual.permiteSelecaoProporcional) ...[
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.info_outline,
-                                  size: 14,
-                                  color: AppTheme.primaryColor,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
                                   'Selecione um ou mais valores',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 11,
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 10,
                                     color: AppTheme.primaryColor,
-                                    fontStyle: FontStyle.italic,
                                   ),
                                 ),
-                              ],
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                // Valores selecionados (chips)
-                if (selecoes.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: selecoes.map((valorId) {
-                      final valor = atributoAtual.valores.firstWhere(
-                        (v) => v.atributoValorId == valorId,
-                        orElse: () => atributoAtual.valores.first,
-                      );
-                      return Chip(
-                        label: Text(valor.nome),
-                        backgroundColor: AppTheme.primaryColor.withOpacity(0.1),
-                        labelStyle: GoogleFonts.inter(
-                          fontSize: 12,
-                          color: AppTheme.primaryColor,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ],
-                const SizedBox(height: 20),
-                // Grid de valores disponíveis (2-3 colunas)
-                valoresDisponiveis.isEmpty
-                    ? Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 40),
-                        child: Center(
-                          child: Text(
-                            'Nenhum valor disponível para este atributo',
-                            style: GoogleFonts.inter(
-                              fontSize: 14,
-                              color: Colors.grey.shade600,
-                            ),
+                              ),
+                            ],
                           ),
                         ),
-                      )
-                    : LayoutBuilder(
-                        builder: (context, constraints) {
-                          final crossAxisCount = constraints.maxWidth > 400 ? 3 : 2;
-                          return GridView.builder(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: crossAxisCount,
-                              crossAxisSpacing: 12,
-                              mainAxisSpacing: 12,
-                              childAspectRatio: 2.5,
-                            ),
-                            itemCount: valoresDisponiveis.length,
-                            itemBuilder: (context, index) {
-                              final valor = valoresDisponiveis[index];
-                              final isSelected = selecoes.contains(valor.atributoValorId);
-                              return _buildValorChipCompacto(atributoAtual, valor, isSelected);
-                            },
-                          );
-                        },
-                      ),
-                // Proporções se permitir seleção proporcional
-                if (atributoAtual.permiteSelecaoProporcional && selecoes.isNotEmpty) ...[
-                  const SizedBox(height: 24),
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade50,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Proporções',
-                          style: GoogleFonts.inter(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        ...selecoes.map((valorId) {
-                          final valor = atributoAtual.valores.firstWhere((v) => v.atributoValorId == valorId);
-                          final proporcao = selecoes.length == 1 
-                              ? 1.0 
-                              : (_proporcoesAtributos[atributoAtual.id]?[valorId] ?? (1.0 / selecoes.length));
-                          return _buildProporcaoInput(atributoAtual, valor, proporcao);
-                        }),
+                        const SizedBox(height: 10),
                       ],
-                    ),
+                      // Grid de valores disponíveis (2-3 colunas)
+                      valoresDisponiveis.isEmpty
+                          ? Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 40),
+                              child: Center(
+                                child: Text(
+                                  'Nenhum valor disponível para este atributo',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 14,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              ),
+                            )
+                          : LayoutBuilder(
+                              builder: (context, constraints) {
+                                final crossAxisCount = constraints.maxWidth > 400 ? 3 : 2;
+                                return GridView.builder(
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: crossAxisCount,
+                                    crossAxisSpacing: 8,
+                                    mainAxisSpacing: 8,
+                                    childAspectRatio: 3.5,
+                                  ),
+                                  itemCount: valoresDisponiveis.length,
+                                  itemBuilder: (context, index) {
+                                    final valor = valoresDisponiveis[index];
+                                    final isSelected = selecoes.contains(valor.atributoValorId);
+                                    return _buildValorChipCompacto(atributoAtual, valor, isSelected);
+                                  },
+                                );
+                              },
+                            ),
+                      const SizedBox(height: 20),
+                    ],
                   ),
-                ],
-                const SizedBox(height: 20),
-              ],
-            ),
+                ),
+              ),
+              // Área fixa de proporções (para todos os atributos proporcionais)
+              _buildAreaProporcoesFixa(atributosOrdenados),
+            ],
           ),
         ),
       ],
@@ -2015,7 +2043,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
                     child: Center(
                       child: Text(
                         '${index + 1}',
-                        style: GoogleFonts.inter(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
                           color: AppTheme.primaryColor,
@@ -2031,7 +2059,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
                       children: [
                         Text(
                           widget.produtoNome,
-                          style: GoogleFonts.inter(
+                          style: GoogleFonts.plusJakartaSans(
                             fontSize: 15,
                             fontWeight: FontWeight.w600,
                           ),
@@ -2040,7 +2068,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
                           const SizedBox(height: 4),
                           Text(
                             variacao.nomeCompleto,
-                            style: GoogleFonts.inter(
+                            style: GoogleFonts.plusJakartaSans(
                               fontSize: 13,
                               color: Colors.grey.shade600,
                             ),
@@ -2050,7 +2078,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
                           const SizedBox(height: 4),
                           Text(
                             observacoes,
-                            style: GoogleFonts.inter(
+                            style: GoogleFonts.plusJakartaSans(
                               fontSize: 12,
                               color: AppTheme.primaryColor,
                               fontStyle: FontStyle.italic,
@@ -2089,7 +2117,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
                   // Seção de observações
                   Text(
                     'Observações',
-                    style: GoogleFonts.inter(
+                    style: GoogleFonts.plusJakartaSans(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       color: Colors.grey.shade700,
@@ -2100,7 +2128,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
                     maxLines: 3,
                     decoration: InputDecoration(
                       hintText: 'Ex: Sem cebola, sem batata palha, bem passado...',
-                      hintStyle: GoogleFonts.inter(
+                      hintStyle: GoogleFonts.plusJakartaSans(
                         fontSize: 13,
                         color: Colors.grey.shade500,
                       ),
@@ -2114,7 +2142,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
                       ),
                       contentPadding: const EdgeInsets.all(12),
                     ),
-                    style: GoogleFonts.inter(fontSize: 14),
+                    style: GoogleFonts.plusJakartaSans(fontSize: 14),
                     controller: TextEditingController(text: observacoes)
                       ..selection = TextSelection.collapsed(offset: observacoes.length),
                     onChanged: (value) => _atualizarObservacoesItem(index, value),
@@ -2128,47 +2156,6 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
               ),
             ),
           ],
-        ],
-      ),
-    );
-  }
-
-  /// Rodapé de navegação entre atributos (separado para ser usado fora do conteúdo)
-  Widget _buildRodapeNavegacao() {
-    if (_produto == null) return const SizedBox.shrink();
-    
-    final atributosOrdenados = List<ProdutoAtributoLocal>.from(_produto!.atributos)
-      ..sort((a, b) => a.ordem.compareTo(b.ordem));
-    
-    if (atributosOrdenados.isEmpty) return const SizedBox.shrink();
-    
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        border: Border(
-          top: BorderSide(color: Colors.grey.shade300),
-        ),
-      ),
-      child: Row(
-        children: [
-          if (_atributoAtualIndex > 0)
-            TextButton.icon(
-              onPressed: () => setState(() => _atributoAtualIndex--),
-              icon: const Icon(Icons.arrow_back, size: 18),
-              label: const Text('Anterior'),
-            )
-          else
-            const SizedBox.shrink(),
-          const Spacer(),
-          if (_atributoAtualIndex < atributosOrdenados.length - 1)
-            TextButton.icon(
-              onPressed: () => setState(() => _atributoAtualIndex++),
-              label: const Text('Próximo'),
-              icon: const Icon(Icons.arrow_forward, size: 18),
-            )
-          else
-            const SizedBox.shrink(),
         ],
       ),
     );
@@ -2226,7 +2213,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
             children: [
               Text(
                 atributo.nome,
-                style: GoogleFonts.inter(
+                style: GoogleFonts.plusJakartaSans(
                                       fontSize: 16,
                   fontWeight: FontWeight.w600,
                 ),
@@ -2245,7 +2232,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
             const SizedBox(height: 4),
             Text(
               atributo.descricao!,
-              style: GoogleFonts.inter(
+              style: GoogleFonts.plusJakartaSans(
                                     fontSize: 12,
                                     color: Colors.grey.shade600,
               ),
@@ -2263,7 +2250,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
                                     const SizedBox(width: 4),
             Text(
                                       'Selecione um ou mais valores',
-              style: GoogleFonts.inter(
+              style: GoogleFonts.plusJakartaSans(
                                         fontSize: 11,
                                         color: AppTheme.primaryColor,
                 fontStyle: FontStyle.italic,
@@ -2285,7 +2272,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
                                     return Chip(
                                       label: Text(valor.nome),
                                       backgroundColor: AppTheme.primaryColor.withOpacity(0.1),
-                                      labelStyle: GoogleFonts.inter(
+                                      labelStyle: GoogleFonts.plusJakartaSans(
                                         fontSize: 12,
                                         color: AppTheme.primaryColor,
                                         fontWeight: FontWeight.w500,
@@ -2313,7 +2300,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
                     child: valoresDisponiveis.isEmpty
                         ? Text(
                             'Nenhum valor disponível para este atributo',
-              style: GoogleFonts.inter(
+              style: GoogleFonts.plusJakartaSans(
                               fontSize: 14,
                               color: Colors.grey.shade600,
                             ),
@@ -2335,7 +2322,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
                                 const SizedBox(height: 24),
                                 Text(
                                   'Proporções',
-              style: GoogleFonts.inter(
+              style: GoogleFonts.plusJakartaSans(
                                     fontSize: 14,
                 fontWeight: FontWeight.w600,
               ),
@@ -2380,7 +2367,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
                     children: [
                       Text(
                         'Selecione os atributos',
-                        style: GoogleFonts.inter(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
                           color: Colors.orange.shade700,
@@ -2389,7 +2376,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
                       const SizedBox(height: 4),
                       Text(
                         'Complete todas as seleções para ver o preço',
-                        style: GoogleFonts.inter(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 12,
                           color: Colors.orange.shade600,
                         ),
@@ -2425,7 +2412,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
                       children: [
                         Text(
                           'Combinação indisponível',
-                          style: GoogleFonts.inter(
+                          style: GoogleFonts.plusJakartaSans(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                             color: Colors.red.shade700,
@@ -2434,7 +2421,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
                         const SizedBox(height: 4),
                         Text(
                           'Algumas combinações selecionadas não possuem variação cadastrada. Ajuste as seleções para continuar.',
-                          style: GoogleFonts.inter(
+                          style: GoogleFonts.plusJakartaSans(
                             fontSize: 12,
                             color: Colors.red.shade600,
                           ),
@@ -2468,7 +2455,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
           children: [
             Text(
                         'Seleção completa',
-              style: GoogleFonts.inter(
+              style: GoogleFonts.plusJakartaSans(
                           fontSize: 14,
                 fontWeight: FontWeight.w600,
                           color: AppTheme.successColor,
@@ -2478,7 +2465,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
               const SizedBox(height: 4),
               Text(
                           'Variação: ${_obterVariacaoSelecionada()!.nomeCompleto}',
-                style: GoogleFonts.inter(
+                style: GoogleFonts.plusJakartaSans(
                             fontSize: 12,
                             color: Colors.grey.shade700,
                 ),
@@ -2506,9 +2493,158 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
       onSelected: (selected) => _selecionarValor(atributo, valor),
       selectedColor: AppTheme.primaryColor.withOpacity(0.2),
       checkmarkColor: AppTheme.primaryColor,
-      labelStyle: GoogleFonts.inter(
+      labelStyle: GoogleFonts.plusJakartaSans(
         color: isSelected ? AppTheme.primaryColor : Colors.black87,
         fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+      ),
+    );
+  }
+
+  /// Área fixa de proporções com resumo e expansão
+  Widget _buildAreaProporcoesFixa(List<ProdutoAtributoLocal> atributosOrdenados) {
+    // Filtrar apenas atributos proporcionais com seleções
+    final atributosProporcionais = atributosOrdenados.where((atributo) {
+      if (!atributo.permiteSelecaoProporcional) return false;
+      final selecoes = _selecoesAtributos[atributo.id] ?? [];
+      return selecoes.isNotEmpty;
+    }).toList();
+
+    if (atributosProporcionais.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          top: BorderSide(color: Colors.grey.shade200, width: 1),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: atributosProporcionais.map((atributo) {
+          final selecoes = _selecoesAtributos[atributo.id] ?? [];
+          final isExpandido = _proporcoesExpandidas[atributo.id] ?? false;
+          
+          return _buildProporcoesCard(atributo, selecoes, isExpandido);
+        }).toList(),
+      ),
+    );
+  }
+
+  /// Card de proporções com resumo e expansão
+  Widget _buildProporcoesCard(
+    ProdutoAtributoLocal atributo,
+    List<String> selecoes,
+    bool isExpandido,
+  ) {
+    // Calcular proporções
+    final proporcoes = <String, double>{};
+    for (var valorId in selecoes) {
+      proporcoes[valorId] = selecoes.length == 1
+          ? 1.0
+          : (_proporcoesAtributos[atributo.id]?[valorId] ?? (1.0 / selecoes.length));
+    }
+
+    // Criar resumo
+    final resumo = selecoes.map((valorId) {
+      final valor = atributo.valores.firstWhere(
+        (v) => v.atributoValorId == valorId,
+        orElse: () => atributo.valores.first,
+      );
+      final proporcao = proporcoes[valorId] ?? 0.0;
+      return '${valor.nome}: ${(proporcao * 100).toStringAsFixed(0)}%';
+    }).join(' • ');
+
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: Colors.grey.shade200, width: 1),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Header clicável com resumo
+          InkWell(
+            onTap: () {
+              setState(() {
+                _proporcoesExpandidas[atributo.id] = !isExpandido;
+              });
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.percent,
+                    size: 18,
+                    color: AppTheme.primaryColor,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Proporções: ${atributo.nome}',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          resumo,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 11,
+                            color: Colors.grey.shade700,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    isExpandido ? Icons.expand_less : Icons.expand_more,
+                    color: Colors.grey.shade600,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // Conteúdo expandido para edição
+          if (isExpandido) ...[
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ...selecoes.map((valorId) {
+                    final valor = atributo.valores.firstWhere(
+                      (v) => v.atributoValorId == valorId,
+                      orElse: () => atributo.valores.first,
+                    );
+                    final proporcao = proporcoes[valorId] ?? 0.0;
+                    return _buildProporcaoInput(atributo, valor, proporcao);
+                  }),
+                ],
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -2521,28 +2657,30 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
   ) {
     return InkWell(
       onTap: () => _selecionarValor(atributo, valor),
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(6),
       child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         decoration: BoxDecoration(
           color: isSelected 
               ? AppTheme.primaryColor.withOpacity(0.15)
               : Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(6),
           border: Border.all(
             color: isSelected 
                 ? AppTheme.primaryColor 
                 : Colors.grey.shade300,
-            width: isSelected ? 2 : 1,
+            width: isSelected ? 1.5 : 1,
           ),
         ),
         child: Center(
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
             children: [
               if (isSelected) ...[
                 Icon(
                   Icons.check_circle,
-                  size: 16,
+                  size: 14,
                   color: AppTheme.primaryColor,
                 ),
                 const SizedBox(width: 4),
@@ -2551,12 +2689,12 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
                 child: Text(
                   valor.nome,
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 11,
                     fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
                     color: isSelected ? AppTheme.primaryColor : Colors.black87,
                   ),
-                  maxLines: 2,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -2579,7 +2717,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
                     Expanded(
             child: Text(
               valor.nome,
-              style: GoogleFonts.inter(fontSize: 14),
+              style: GoogleFonts.plusJakartaSans(fontSize: 14),
             ),
           ),
           SizedBox(
@@ -2734,57 +2872,49 @@ class _PersonalizarItensModalState extends State<_PersonalizarItensModal> {
       ));
     }
 
-    Navigator.of(context).pop(ProdutoSelecionadoResult(itens: itens));
+    Navigator.of(context, rootNavigator: true).pop(ProdutoSelecionadoResult(itens: itens));
   }
 
   @override
   Widget build(BuildContext context) {
-    final isMobile = MediaQuery.of(context).size.width < 600;
     final composicaoRemovivel = _obterComposicaoRemovivel();
 
-    final content = Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: isMobile ? BorderRadius.zero : BorderRadius.circular(20),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Header
-          Padding(
-            padding: const EdgeInsets.all(20),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Personalizar itens',
-                        style: GoogleFonts.inter(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${widget.produtoNome} (${widget.quantidade} ${widget.quantidade == 1 ? 'item' : 'itens'})',
-                        style: GoogleFonts.inter(
-                          fontSize: 14,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ],
+    // SEMPRE retorna Scaffold ocupando TELA CHEIA
+    return Scaffold(
+      backgroundColor: Colors.white,
+      extendBodyBehindAppBar: false,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.close, color: Colors.black87),
+          onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
+        ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Personalizar itens',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
             ),
-          ),
-          const Divider(height: 1),
+            Text(
+              '${widget.produtoNome} (${widget.quantidade} ${widget.quantidade == 1 ? 'item' : 'itens'})',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 12,
+                color: Colors.grey.shade600,
+                fontWeight: FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
+      ),
+      body: Column(
+        children: [
           // Conteúdo
           Expanded(
             child: SingleChildScrollView(
@@ -2794,7 +2924,7 @@ class _PersonalizarItensModalState extends State<_PersonalizarItensModal> {
                 children: [
                   Text(
                     'Remova componentes de cada item conforme necessário:',
-                    style: GoogleFonts.inter(
+                    style: GoogleFonts.plusJakartaSans(
                       fontSize: 14,
                       color: Colors.grey.shade700,
                     ),
@@ -2812,9 +2942,8 @@ class _PersonalizarItensModalState extends State<_PersonalizarItensModal> {
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               color: Colors.grey.shade50,
-              borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(20),
-                bottomRight: Radius.circular(20),
+              border: Border(
+                top: BorderSide(color: Colors.grey.shade300),
               ),
             ),
             child: Row(
@@ -2838,27 +2967,6 @@ class _PersonalizarItensModalState extends State<_PersonalizarItensModal> {
             ),
           ),
         ],
-      ),
-    );
-
-    if (isMobile) {
-      return Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: EdgeInsets.zero,
-        child: Container(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.9,
-          ),
-          child: content,
-        ),
-      );
-    }
-
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 600, maxHeight: 700),
-        child: content,
       ),
     );
   }
@@ -2903,7 +3011,7 @@ class _PersonalizarItensModalState extends State<_PersonalizarItensModal> {
                     child: Center(
                       child: Text(
                         '${index + 1}',
-                        style: GoogleFonts.inter(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
                           color: AppTheme.primaryColor,
@@ -2915,7 +3023,7 @@ class _PersonalizarItensModalState extends State<_PersonalizarItensModal> {
                   Expanded(
                     child: Text(
                       'Item ${index + 1}',
-                      style: GoogleFonts.inter(
+                      style: GoogleFonts.plusJakartaSans(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                       ),
@@ -2934,7 +3042,7 @@ class _PersonalizarItensModalState extends State<_PersonalizarItensModal> {
                             ),
                             child: Text(
                               '${componentesRemovidos.length} removido${componentesRemovidos.length == 1 ? '' : 's'}',
-                              style: GoogleFonts.inter(
+                              style: GoogleFonts.plusJakartaSans(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w600,
                                 color: Colors.orange.shade900,
@@ -2959,7 +3067,7 @@ class _PersonalizarItensModalState extends State<_PersonalizarItensModal> {
                                 const SizedBox(width: 4),
                                 Text(
                                   'Obs',
-                                  style: GoogleFonts.inter(
+                                  style: GoogleFonts.plusJakartaSans(
                                     fontSize: 11,
                                     fontWeight: FontWeight.w600,
                                     color: Colors.blue.shade900,
@@ -2989,7 +3097,7 @@ class _PersonalizarItensModalState extends State<_PersonalizarItensModal> {
                 children: [
                   Text(
                     'Remover componentes',
-                    style: GoogleFonts.inter(
+                    style: GoogleFonts.plusJakartaSans(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       color: Colors.grey.shade700,
@@ -3034,7 +3142,7 @@ class _PersonalizarItensModalState extends State<_PersonalizarItensModal> {
                               Expanded(
                                 child: Text(
                                   componente.componenteNome,
-                                  style: GoogleFonts.inter(
+                                  style: GoogleFonts.plusJakartaSans(
                                     fontSize: 14,
                                     fontWeight: isRemovido ? FontWeight.w600 : FontWeight.normal,
                                     color: isRemovido ? Colors.red.shade700 : Colors.grey.shade800,
@@ -3058,7 +3166,7 @@ class _PersonalizarItensModalState extends State<_PersonalizarItensModal> {
                   // Campo de observação
                   Text(
                     'Observação',
-                    style: GoogleFonts.inter(
+                    style: GoogleFonts.plusJakartaSans(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       color: Colors.grey.shade700,
@@ -3075,7 +3183,7 @@ class _PersonalizarItensModalState extends State<_PersonalizarItensModal> {
                     maxLines: 3,
                     decoration: InputDecoration(
                       hintText: 'Digite observações para este item...',
-                      hintStyle: GoogleFonts.inter(
+                      hintStyle: GoogleFonts.plusJakartaSans(
                         fontSize: 14,
                         color: Colors.grey.shade400,
                       ),
@@ -3095,7 +3203,7 @@ class _PersonalizarItensModalState extends State<_PersonalizarItensModal> {
                       filled: true,
                       fillColor: Colors.grey.shade50,
                     ),
-                    style: GoogleFonts.inter(
+                    style: GoogleFonts.plusJakartaSans(
                       fontSize: 14,
                       color: Colors.grey.shade800,
                     ),
