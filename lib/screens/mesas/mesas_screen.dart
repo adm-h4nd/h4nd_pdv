@@ -22,6 +22,7 @@ import '../../data/models/mesa_alerta.dart';
 import 'widgets/mesa_insights_panel.dart';
 import 'widgets/mesa_alerta_badge.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../widgets/h4nd_loading.dart';
 
 /// Classe auxiliar para armazenar tamanhos do card
 class _MesaCardSizes {
@@ -245,7 +246,9 @@ class _MesasScreenState extends State<MesasScreen> {
     final adaptive = AdaptiveLayoutProvider.of(context);
     if (adaptive == null) {
       return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+        body: Center(
+          child: H4ndLoading(size: 60),
+        ),
       );
     }
 
@@ -1030,12 +1033,13 @@ class _MesasScreenState extends State<MesasScreen> {
                     ? null 
                     : () => _provider.loadMesas(refresh: true),
                 icon: _provider.isLoading
-                    ? SizedBox(
+                    ? const SizedBox(
                         width: 20,
                         height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        child: H4ndLoadingCompact(
+                          size: 20,
+                          blueColor: Colors.white,
+                          greenColor: Colors.white70,
                         ),
                       )
                     : const Icon(Icons.refresh_rounded),
@@ -1107,7 +1111,9 @@ class _MesasScreenState extends State<MesasScreen> {
       child: _provider.errorMessage != null
           ? _buildErrorWidget(adaptive)
           : _provider.isLoading && _provider.mesas.isEmpty
-              ? const Center(child: CircularProgressIndicator())
+              ? const Center(
+                  child: H4ndLoading(size: 60),
+                )
               : _mesasFiltradas.isEmpty
                   ? Center(
                       child: Column(
@@ -1192,7 +1198,9 @@ class _MesasScreenState extends State<MesasScreen> {
                         : Container(
                             color: Colors.white,
                             child: _provider.isLoading && _provider.mesas.isEmpty
-                                ? const Center(child: CircularProgressIndicator())
+                                ? const Center(
+                                    child: H4ndLoading(size: 60),
+                                  )
                               : _mesasFiltradas.isEmpty
                                   ? Center(
                                       child: Column(
