@@ -167,7 +167,7 @@ class _DetalhesProdutosMesaScreenState extends State<DetalhesProdutosMesaScreen>
   Widget build(BuildContext context) {
     final adaptive = AdaptiveLayoutProvider.of(context);
     if (adaptive == null) {
-      return const Scaffold(
+      return Scaffold(
         body: Center(child: H4ndLoading(size: 60)),
       );
     }
@@ -438,7 +438,7 @@ class _DetalhesProdutosMesaScreenState extends State<DetalhesProdutosMesaScreen>
           // Indicadores de status compactos
           if (_provider.estaSincronizando) ...[
             const SizedBox(width: 6),
-            const H4ndLoadingCompact(size: 10),
+            H4ndLoadingCompact(size: 10),
           ],
           if (_provider.temErros) ...[
             const SizedBox(width: 6),
@@ -759,7 +759,7 @@ class _DetalhesProdutosMesaScreenState extends State<DetalhesProdutosMesaScreen>
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Center(child: H4ndLoading(size: 60)),
+      builder: (context) => Center(child: H4ndLoading(size: 60)),
     );
 
     try {
@@ -829,7 +829,7 @@ class _DetalhesProdutosMesaScreenState extends State<DetalhesProdutosMesaScreen>
     if (_provider.isLoading || _provider.carregandoProdutos) {
       return Container(
         color: Colors.white,
-        child: const Center(
+        child: Center(
           child: H4ndLoading(size: 60),
         ),
       );
@@ -1055,7 +1055,7 @@ class _DetalhesProdutosMesaScreenState extends State<DetalhesProdutosMesaScreen>
                     ? null 
                     : () => _provider.loadProdutos(refresh: true),
                 icon: _provider.isLoading
-                    ? const H4ndLoadingCompact(
+                    ? H4ndLoadingCompact(
                         size: 20,
                         blueColor: Colors.white,
                         greenColor: Colors.white70,
@@ -1109,7 +1109,7 @@ class _DetalhesProdutosMesaScreenState extends State<DetalhesProdutosMesaScreen>
         : (_provider.isLoading || _provider.carregandoProdutos)
             ? Container(
                 color: Colors.white,
-                child: const Center(child: H4ndLoading(size: 60)),
+                child: Center(child: H4ndLoading(size: 60)),
               )
             : _provider.produtosAgrupados.isEmpty
                 ? Container(
@@ -1165,7 +1165,7 @@ class _DetalhesProdutosMesaScreenState extends State<DetalhesProdutosMesaScreen>
     if (_provider.isLoading || _provider.carregandoProdutos || _provider.carregandoComandas) {
       return Container(
         color: Colors.white,
-        child: const Center(
+        child: Center(
           child: H4ndLoading(size: 60),
         ),
       );
@@ -1232,7 +1232,7 @@ class _DetalhesProdutosMesaScreenState extends State<DetalhesProdutosMesaScreen>
     if (_provider.carregandoComandas) {
       return Container(
         color: Colors.white,
-        child: const Center(child: H4ndLoading(size: 60)),
+        child: Center(child: H4ndLoading(size: 60)),
       );
     }
 

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
-import 'dart:io' show Platform;
 import 'package:provider/provider.dart';
 import '../../../presentation/providers/auth_provider.dart';
 import '../../../presentation/providers/services_provider.dart';
@@ -195,8 +194,11 @@ class _HomeNavigationState extends State<HomeNavigation> {
     BuildContext context,
     List<NavigationItem> navigationItems,
   ) {
+    // Detecta desktop usando defaultTargetPlatform (funciona em todas as plataformas)
     final isDesktop = kIsWeb || 
-                      (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS));
+                      (defaultTargetPlatform == TargetPlatform.windows ||
+                       defaultTargetPlatform == TargetPlatform.linux ||
+                       defaultTargetPlatform == TargetPlatform.macOS);
     
     final content = Container(
       padding: EdgeInsets.symmetric(

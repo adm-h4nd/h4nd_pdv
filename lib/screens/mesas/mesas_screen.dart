@@ -245,7 +245,7 @@ class _MesasScreenState extends State<MesasScreen> {
   Widget build(BuildContext context) {
     final adaptive = AdaptiveLayoutProvider.of(context);
     if (adaptive == null) {
-      return const Scaffold(
+      return Scaffold(
         body: Center(
           child: H4ndLoading(size: 60),
         ),
@@ -314,6 +314,12 @@ class _MesasScreenState extends State<MesasScreen> {
       ),
       child: Row(
         children: [
+          // Botão Home (apenas desktop/Windows) - para navegar de volta
+          if (!adaptive.isMobile) ...[
+            _buildHomeButton(adaptive),
+            const SizedBox(width: 8),
+          ],
+          
           // Botão de busca - compacto
           _buildToolButtonCompact(
             adaptive,
@@ -408,6 +414,23 @@ class _MesasScreenState extends State<MesasScreen> {
           ),
         ],
       ),
+    );
+  }
+  
+  /// Botão Home para desktop/Windows (navega para home)
+  Widget _buildHomeButton(AdaptiveLayoutProvider adaptive) {
+    return _buildToolButtonCompact(
+      adaptive,
+      icon: Icons.home_rounded,
+      onTap: () {
+        // Navega para home (pop até chegar na primeira rota que é a HomeNavigation)
+        Navigator.of(context).popUntil((route) {
+          // Para quando encontrar a HomeNavigation ou chegar na primeira rota
+          return route.isFirst || route.settings.name == '/';
+        });
+      },
+      isPrimary: false,
+      tooltip: 'Home',
     );
   }
   
@@ -1033,7 +1056,7 @@ class _MesasScreenState extends State<MesasScreen> {
                     ? null 
                     : () => _provider.loadMesas(refresh: true),
                 icon: _provider.isLoading
-                    ? const SizedBox(
+                    ? SizedBox(
                         width: 20,
                         height: 20,
                         child: H4ndLoadingCompact(
@@ -1111,7 +1134,7 @@ class _MesasScreenState extends State<MesasScreen> {
       child: _provider.errorMessage != null
           ? _buildErrorWidget(adaptive)
           : _provider.isLoading && _provider.mesas.isEmpty
-              ? const Center(
+              ? Center(
                   child: H4ndLoading(size: 60),
                 )
               : _mesasFiltradas.isEmpty
@@ -1198,7 +1221,7 @@ class _MesasScreenState extends State<MesasScreen> {
                         : Container(
                             color: Colors.white,
                             child: _provider.isLoading && _provider.mesas.isEmpty
-                                ? const Center(
+                                ? Center(
                                     child: H4ndLoading(size: 60),
                                   )
                               : _mesasFiltradas.isEmpty

@@ -87,7 +87,7 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
         showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (context) => const Center(
+          builder: (context) => Center(
             child: H4ndLoading(size: 60),
           ),
         );
@@ -994,7 +994,7 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
       context: context,
       barrierDismissible: false,
       useRootNavigator: true,
-      builder: (dialogContext) => const Center(
+      builder: (dialogContext) => Center(
         child: H4ndLoading(size: 60),
       ),
     );
