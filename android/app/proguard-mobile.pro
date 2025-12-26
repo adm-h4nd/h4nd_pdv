@@ -1,7 +1,69 @@
 # ProGuard rules para flavor mobile
-# Ignora todas as classes do SDK Stone que não devem ser incluídas no flavor mobile
-# Estas regras fazem com que o R8 ignore referências às classes Stone mesmo que sejam detectadas
+# IMPORTANTE: ORDEM É CRÍTICA! Preservar ANTES de remover/otimizar
 
+# ============================================================================
+# CRÍTICO: PRESERVAR PRIMEIRO (antes de qualquer otimização)
+# ============================================================================
+# Desabilita TODAS as otimizações e ofuscação (máxima segurança)
+-dontoptimize
+-dontobfuscate
+-dontpreverify
+-keepattributes *
+-keepnames class * { *; }
+
+# Preserva MainActivity e ciclo de vida (CRÍTICO - deve vir primeiro!)
+-keep class com.example.mx_cloud_pdv.MainActivity { *; }
+-keep class io.flutter.embedding.android.FlutterActivity { *; }
+-keepclassmembers class com.example.mx_cloud_pdv.MainActivity { *; }
+-keepclassmembers class io.flutter.embedding.android.FlutterActivity { *; }
+
+# Preserva TODOS os adapters do Hive (CRÍTICO - deve vir antes de otimizações!)
+-keep class * extends com.ryanharter.hive.typeadapters.TypeAdapter { *; }
+-keep class * implements com.ryanharter.hive.typeadapters.TypeAdapter { *; }
+-keep @com.ryanharter.hive.typeadapters.TypeAdapter class * { *; }
+
+# Preserva TODOS os adapters específicos do projeto (CRÍTICO!)
+-keep class com.example.mx_cloud_pdv.data.models.local.**Adapter { *; }
+-keep class com.example.mx_cloud_pdv.data.models.home.**Adapter { *; }
+-keep class com.example.mx_cloud_pdv.data.models.local.**Local { *; }
+-keep class com.example.mx_cloud_pdv.data.models.home.** { *; }
+
+# Preserva classes com @HiveType
+-keep @hive.HiveType class * { *; }
+-keepclassmembers @hive.HiveType class * { *; }
+
+# Preserva métodos read e write dos adapters
+-keepclassmembers class * extends com.ryanharter.hive.typeadapters.TypeAdapter {
+    public * read(***);
+    public void write(***, ***);
+}
+
+# Preserva o pacote completo de models local
+-keep class com.example.mx_cloud_pdv.data.models.local.** { *; }
+
+# Preserva nomes das classes (importante para reflexão do Hive)
+-keepnames class com.example.mx_cloud_pdv.data.models.local.** { *; }
+-keepnames class com.example.mx_cloud_pdv.data.models.home.** { *; }
+
+# Preserva construtores dos adapters (necessários para instanciação)
+-keepclassmembers class com.example.mx_cloud_pdv.data.models.local.**Adapter {
+    <init>();
+}
+
+# Preserva TODAS as classes que contêm "Adapter" no nome (segurança extra)
+-keep class **.*Adapter { *; }
+
+# Preserva anotações (incluindo @Keep)
+-keepattributes *Annotation*
+-keepattributes Signature
+-keepattributes Exceptions
+-keepattributes InnerClasses
+-keepattributes SourceFile,LineNumberTable
+-keepattributes EnclosingMethod
+
+# ============================================================================
+# SDK Stone - Ignora classes do SDK Stone (depois de preservar o essencial)
+# ============================================================================
 # IMPORTANTE: O R8 está detectando referências às classes Stone mesmo que não sejam usadas
 # Estas regras fazem com que o R8 ignore completamente essas classes e não tente incluí-las no APK
 
@@ -91,92 +153,4 @@
 # Ignora classes AWT/Swing (não disponíveis no Android)
 -dontwarn java.awt.**
 -dontwarn javax.swing.**
-
-# ============================================================================
-# CRÍTICO: Preserva MainActivity e ciclo de vida
-# ============================================================================
-# Preserva MainActivity completamente (incluindo anotações e métodos)
--keep class com.example.mx_cloud_pdv.MainActivity {
-    <init>(...);
-    void onCreate(android.os.Bundle);
-    void onStart();
-    void onResume();
-    void onPause();
-    void onStop();
-    void onDestroy();
-    *;
-}
--keepclassmembers class com.example.mx_cloud_pdv.MainActivity {
-    <init>(...);
-    void onCreate(android.os.Bundle);
-    void onStart();
-    void onResume();
-    void onPause();
-    void onStop();
-    void onDestroy();
-    *;
-}
-
-# Preserva FlutterActivity e TODOS os seus métodos (sem exceção)
--keep class io.flutter.embedding.android.FlutterActivity {
-    <init>(...);
-    void onCreate(android.os.Bundle);
-    void onStart();
-    void onResume();
-    void onPause();
-    void onStop();
-    void onDestroy();
-    *;
-}
--keepclassmembers class io.flutter.embedding.android.FlutterActivity {
-    <init>(...);
-    void onCreate(android.os.Bundle);
-    void onStart();
-    void onResume();
-    void onPause();
-    void onStop();
-    void onDestroy();
-    *;
-}
-
-# Preserva métodos de ciclo de vida de QUALQUER Activity (sem exceção)
--keepclassmembers class * extends android.app.Activity {
-    <init>(...);
-    public void onCreate(android.os.Bundle);
-    public void onStart();
-    public void onResume();
-    public void onPause();
-    public void onStop();
-    public void onDestroy();
-    protected void onCreate(android.os.Bundle);
-    protected void onStart();
-    protected void onResume();
-    protected void onPause();
-    protected void onStop();
-    protected void onDestroy();
-}
-
-# Preserva TODAS as classes que estendem FlutterActivity
--keep class * extends io.flutter.embedding.android.FlutterActivity {
-    <init>(...);
-    void onCreate(android.os.Bundle);
-    void onStart();
-    void onResume();
-    void onPause();
-    void onStop();
-    void onDestroy();
-    *;
-}
-
-# Preserva anotações (incluindo @Keep)
--keepattributes *Annotation*
--keepattributes Signature
--keepattributes Exceptions
--keepattributes InnerClasses
--keepattributes SourceFile,LineNumberTable
-
-# Preserva classes Hive
--keep class * extends com.ryanharter.hive.typeadapters.TypeAdapter { *; }
--keep class * implements com.ryanharter.hive.typeadapters.TypeAdapter { *; }
--keep @com.ryanharter.hive.typeadapters.TypeAdapter class * { *; }
 

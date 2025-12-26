@@ -64,3 +64,4 @@ O aplicativo Flutter para Windows requer o **Microsoft Visual C++ Redistributabl
 - O aplicativo é **portátil** - não precisa de instalação
 - Você pode mover a pasta inteira para qualquer local do Windows
 - Não é necessário instalar o Flutter no computador de destino
+

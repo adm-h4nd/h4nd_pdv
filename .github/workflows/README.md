@@ -110,3 +110,4 @@ Certifique-se de que os flavors estão configurados no projeto:
 - O executável estará em `build/windows/x64/runner/Release/`
 - O ZIP contém todos os arquivos necessários para distribuição
 - Os artefatos ficam disponíveis por 30 dias
+

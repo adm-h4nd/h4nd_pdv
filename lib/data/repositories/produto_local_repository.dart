@@ -35,12 +35,22 @@ class ProdutoLocalRepository {
   void _carregarCache() {
     if (_box == null) return;
     try {
-    _cache = _box!.values
-        .where((p) => p.isAtivo && p.isVendavel)
-        .toList();
-    _cacheTimestamp = DateTime.now();
+      final totalNoBox = _box!.length;
+      final todosProdutos = _box!.values.toList();
+      final produtosAtivos = todosProdutos.where((p) => p.isAtivo).toList();
+      final produtosVendaveis = produtosAtivos.where((p) => p.isVendavel).toList();
+      
+      _cache = produtosVendaveis;
+      _cacheTimestamp = DateTime.now();
+      
+      print('📦 [ProdutoRepo] Cache carregado:');
+      print('   Total no box: $totalNoBox');
+      print('   Produtos ativos: ${produtosAtivos.length}');
+      print('   Produtos vendáveis: ${produtosVendaveis.length}');
+      debugPrint('📦 [ProdutoRepo] Cache carregado: $totalNoBox total, ${produtosAtivos.length} ativos, ${produtosVendaveis.length} vendáveis');
     } catch (e) {
       debugPrint('⚠️ Erro ao carregar cache (dados podem ter schema antigo): $e');
+      print('❌ [ProdutoRepo] Erro ao carregar cache: $e');
       _cache = [];
       _cacheTimestamp = DateTime.now();
     }
@@ -111,6 +121,7 @@ class ProdutoLocalRepository {
     }
 
     debugPrint('📊 Total de produtos salvos: ${produtosDto.length}');
+    print('📊 [ProdutoRepo] Total de produtos salvos: ${produtosDto.length}');
     debugPrint('📊 Produtos com composição direta: $produtosComComposicao (total de $totalComposicoes itens)');
     
     // DEBUG: Verificar se a composição foi salva corretamente lendo de volta
@@ -146,6 +157,9 @@ class ProdutoLocalRepository {
     }
 
     invalidarCache();
+    _carregarCache(); // Recarrega o cache imediatamente após salvar
+    print('✅ [ProdutoRepo] Cache recarregado após salvar produtos');
+    debugPrint('✅ [ProdutoRepo] Cache recarregado após salvar produtos');
   }
 
   /// Busca produto por ID
@@ -174,12 +188,18 @@ class ProdutoLocalRepository {
   /// Busca produtos por nome (case-insensitive)
   List<ProdutoLocal> buscarPorNome(String termo) {
     final termoLower = termo.toLowerCase();
-    return _obterProdutos()
+    final produtos = _obterProdutos();
+    final resultados = produtos
         .where((p) =>
             p.nome.toLowerCase().contains(termoLower) ||
             (p.descricao?.toLowerCase().contains(termoLower) ?? false))
         .toList()
       ..sort((a, b) => a.nome.compareTo(b.nome));
+    
+    print('🔍 [ProdutoRepo] Busca por "$termo": ${produtos.length} produtos disponíveis, ${resultados.length} encontrados');
+    debugPrint('🔍 [ProdutoRepo] Busca por "$termo": ${produtos.length} produtos disponíveis, ${resultados.length} encontrados');
+    
+    return resultados;
   }
 
   /// Filtra produtos por grupo

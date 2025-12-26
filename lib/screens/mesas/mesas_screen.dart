@@ -23,7 +23,6 @@ import 'widgets/mesa_insights_panel.dart';
 import 'widgets/mesa_alerta_badge.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../widgets/h4nd_loading.dart';
-import '../../presentation/widgets/common/home_navigation.dart';
 
 /// Classe auxiliar para armazenar tamanhos do card
 class _MesaCardSizes {
@@ -200,18 +199,6 @@ class _MesasScreenState extends State<MesasScreen> {
       _filtroAtivo = null;
     });
     _provider.filterMesas('');
-  }
-  
-  /// Navega para a tela home (apenas Windows/desktop)
-  void _navegarParaHome() {
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(
-        builder: (context) => const AdaptiveLayout(
-          child: HomeNavigation(),
-        ),
-      ),
-      (route) => route.isFirst, // Mantém apenas a primeira rota (home)
-    );
   }
   
   @override
@@ -407,20 +394,6 @@ class _MesasScreenState extends State<MesasScreen> {
                     ),
                   ),
               ],
-            ),
-            const SizedBox(width: 8),
-          ],
-          
-          // Botão Home - apenas para Windows/desktop
-          if (defaultTargetPlatform == TargetPlatform.windows ||
-              defaultTargetPlatform == TargetPlatform.linux ||
-              defaultTargetPlatform == TargetPlatform.macOS) ...[
-            _buildToolButtonCompact(
-              adaptive,
-              icon: Icons.home_rounded,
-              onTap: _navegarParaHome,
-              isPrimary: false,
-              tooltip: 'Home',
             ),
             const SizedBox(width: 8),
           ],

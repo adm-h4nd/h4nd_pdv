@@ -20,39 +20,22 @@
     @androidx.annotation.Keep *;
 }
 
-# CRÍTICO: Preserva MainActivity e métodos de ciclo de vida
--keep class com.example.mx_cloud_pdv.MainActivity {
-    <init>(...);
-    void onCreate(android.os.Bundle);
-    void onStart();
-    void onResume();
-    void onPause();
-    void onStop();
-    void onDestroy();
-    *;
-}
+# ============================================================================
+# CRÍTICO: Preserva adapters do Hive (aplicado a todos os flavors)
+# ============================================================================
+# Preserva TODOS os adapters do Hive
+-keep class * extends com.ryanharter.hive.typeadapters.TypeAdapter { *; }
+-keep class * implements com.ryanharter.hive.typeadapters.TypeAdapter { *; }
 
-# Preserva FlutterActivity completamente
--keep class io.flutter.embedding.android.FlutterActivity {
-    <init>(...);
-    void onCreate(android.os.Bundle);
-    void onStart();
-    void onResume();
-    void onPause();
-    void onStop();
-    void onDestroy();
-    *;
-}
+# Preserva adapters específicos do projeto
+-keep class com.example.mx_cloud_pdv.data.models.local.**Adapter { *; }
+-keep class com.example.mx_cloud_pdv.data.models.home.**Adapter { *; }
+-keep class com.example.mx_cloud_pdv.data.models.local.**Local { *; }
+-keep class com.example.mx_cloud_pdv.data.models.home.** { *; }
 
-# Preserva métodos de ciclo de vida de qualquer Activity
--keepclassmembers class * extends android.app.Activity {
-    public void onCreate(android.os.Bundle);
-    public void onStart();
-    public void onResume();
-    public void onPause();
-    public void onStop();
-    public void onDestroy();
-}
+# Preserva nomes das classes (importante para reflexão)
+-keepnames class com.example.mx_cloud_pdv.data.models.local.** { *; }
+-keepnames class com.example.mx_cloud_pdv.data.models.home.** { *; }
 
 # Regras específicas para flavor mobile (aplicadas via build.gradle.kts)
 # As classes do SDK Stone serão ignoradas no flavor mobile
