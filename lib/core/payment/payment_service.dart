@@ -4,26 +4,16 @@ import 'payment_config.dart';
 import 'payment_provider.dart';
 import 'payment_method_option.dart';
 import '../../data/adapters/payment/payment_provider_registry.dart';
-import '../../data/services/core/venda_service.dart';
 
 /// Serviço principal de pagamento
 class PaymentService {
   PaymentConfig? _config;
-  static VendaService? _vendaService;
   static PaymentService? _instance;
   
-  static Future<PaymentService> getInstance({VendaService? vendaService}) async {
+  static Future<PaymentService> getInstance() async {
     _instance ??= PaymentService._();
-    if (vendaService != null) {
-      _vendaService = vendaService;
-    }
     await _instance!._initialize();
     return _instance!;
-  }
-  
-  /// Configura o VendaService (chamado após ServicesProvider ser criado)
-  static void setVendaService(VendaService vendaService) {
-    _vendaService = vendaService;
   }
   
   PaymentService._();

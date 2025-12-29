@@ -698,7 +698,10 @@ class _DetalhesProdutosMesaScreenState extends State<DetalhesProdutosMesaScreen>
       produtosAgrupados: produtos,
       // Callback removido - o provider já reage ao evento pagamentoProcessado
       // e atualiza localmente sem ir no servidor
-      onPaymentSuccess: () {
+      onPagamentoProcessado: () {
+        // Não precisa fazer nada - provider já reage ao evento
+      },
+      onVendaConcluida: () {
         // Não precisa fazer nada - provider já reage ao evento
       },
     );
@@ -1316,7 +1319,14 @@ class _DetalhesProdutosMesaScreenState extends State<DetalhesProdutosMesaScreen>
       context,
       venda: venda,
       produtosAgrupados: produtos,
-      onPaymentSuccess: () {
+      onPagamentoProcessado: () {
+        // Recarrega após qualquer pagamento (pode ser parcial)
+        _provider.loadVendaAtual();
+        _provider.loadProdutos(refresh: true);
+        // Comandas são recarregadas automaticamente dentro de _loadProdutos() quando controle é por comanda
+      },
+      onVendaConcluida: () {
+        // Recarrega quando venda é concluída
         _provider.loadVendaAtual();
         _provider.loadProdutos(refresh: true);
         // Comandas são recarregadas automaticamente dentro de _loadProdutos() quando controle é por comanda

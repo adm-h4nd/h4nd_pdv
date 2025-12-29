@@ -3,14 +3,16 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/adaptive_layout/adaptive_layout.dart';
-import '../../../widgets/app_header.dart';
 import '../../../widgets/elevated_toolbar_container.dart';
-import '../../../widgets/h4nd_loading.dart';
 import '../../../presentation/providers/pedido_provider.dart';
 import '../../../presentation/providers/services_provider.dart';
+import '../../../presentation/providers/venda_balcao_provider.dart';
 import '../../../data/models/modules/restaurante/mesa_list_item.dart';
 import '../../../data/models/modules/restaurante/comanda_list_item.dart';
-import '../../../data/models/modules/restaurante/configuracao_restaurante_dto.dart';
+import '../../../core/widgets/loading_helper.dart';
+import '../../../core/widgets/error_helper.dart';
+import '../../../data/models/core/tipo_venda.dart';
+import '../../../data/models/core/pedido_dto.dart';
 import 'components/categoria_navigation_tree.dart';
 import 'components/pedido_resumo_panel.dart';
 
@@ -19,12 +21,14 @@ class NovoPedidoRestauranteScreen extends StatefulWidget {
   final String? mesaId; // ID da mesa (opcional)
   final String? comandaId; // ID da comanda (opcional)
   final bool isModal; // Indica se deve ser exibido como modal
+  final TipoVenda tipoVenda; // Tipo de venda (mesa, balcão, delivery, etc.)
 
   const NovoPedidoRestauranteScreen({
     super.key,
     this.mesaId,
     this.comandaId,
     this.isModal = false,
+    this.tipoVenda = TipoVenda.controlada, // Padrão: venda controlada (mesa/comanda)
   });
 
   /// SEMPRE mostra como TELA CHEIA (mobile e desktop)
@@ -32,6 +36,7 @@ class NovoPedidoRestauranteScreen extends StatefulWidget {
     BuildContext context, {
     String? mesaId,
     String? comandaId,
+    TipoVenda tipoVenda = TipoVenda.controlada,
   }) async {
     // SEMPRE usa Navigator.push para tela cheia em TODAS as plataformas
     return await Navigator.of(context, rootNavigator: true).push<bool>(
@@ -41,6 +46,7 @@ class NovoPedidoRestauranteScreen extends StatefulWidget {
             mesaId: mesaId,
             comandaId: comandaId,
             isModal: false,
+            tipoVenda: tipoVenda,
           ),
         ),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
@@ -61,14 +67,76 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
   ComandaListItemDto? _comanda;
   final ValueNotifier<bool> _mostrarBuscaNotifier = ValueNotifier<bool>(false);
 
-  void _fecharLoadingSeAberto(BuildContext context) {
-    try {
-      if (Navigator.of(context).canPop()) {
+
+  /// Verifica se há venda pendente (apenas para tipos que requerem conexão)
+  /// Retorna true se pode continuar, false se deve fechar a tela
+  bool _verificarVendaPendente() {
+    // Apenas tipos que requerem conexão podem ter venda pendente
+    if (!widget.tipoVenda.requerConexao) return true;
+    
+    final vendaBalcaoProvider = Provider.of<VendaBalcaoProvider>(context, listen: false);
+    if (vendaBalcaoProvider.temVendaPendente) {
+      // Tem venda pendente → não permite criar novo pedido
+      // Fecha esta tela e volta (tela específica vai abrir pagamento)
+      if (mounted && Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
       }
-    } catch (e) {
-      debugPrint('Erro ao fechar loading: $e');
+      return false;
     }
+    return true;
+  }
+
+  /// Busca dados de mesa e/ou comanda se houver IDs
+  Future<void> _buscarMesaOuComanda() async {
+    final servicesProvider = Provider.of<ServicesProvider>(context, listen: false);
+    
+    // Busca mesa se houver ID
+    if (widget.mesaId != null && mounted) {
+      final mesaResponse = await servicesProvider.mesaService.getMesaById(widget.mesaId!);
+      if (mesaResponse.success && mesaResponse.data != null && mounted) {
+        setState(() {
+          _mesa = mesaResponse.data;
+        });
+      }
+    }
+
+    // Busca comanda se houver ID
+    if (widget.comandaId != null && mounted) {
+      final comandaResponse = await servicesProvider.comandaService.getComandaById(widget.comandaId!);
+      if (comandaResponse.success && comandaResponse.data != null && mounted) {
+        setState(() {
+          _comanda = comandaResponse.data;
+        });
+      }
+    }
+  }
+
+  /// Carrega configuração do restaurante se necessário
+  Future<void> _carregarConfiguracao() async {
+    if (!mounted) return;
+    
+    final servicesProvider = Provider.of<ServicesProvider>(context, listen: false);
+    if (!servicesProvider.configuracaoRestauranteCarregada) {
+      await servicesProvider.carregarConfiguracaoRestaurante();
+    }
+  }
+
+  /// Inicializa novo pedido no provider
+  Future<bool> _iniciarPedido() async {
+    if (!mounted) return false;
+    
+    final pedidoProvider = Provider.of<PedidoProvider>(context, listen: false);
+    
+    debugPrint('📋 [NovoPedidoRestauranteScreen] Chamando iniciarNovoPedido:');
+    debugPrint('  - MesaId: ${widget.mesaId}');
+    debugPrint('  - ComandaId: ${widget.comandaId}');
+
+        final sucesso = await pedidoProvider.iniciarNovoPedido(
+          mesaId: widget.mesaId,
+          comandaId: widget.comandaId,
+        );
+
+    return sucesso;
   }
 
   @override
@@ -78,100 +146,58 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       
+      // Mostra loading enquanto inicializa
+      LoadingHelper.show(context);
+      
       try {
-        final pedidoProvider = Provider.of<PedidoProvider>(context, listen: false);
-        final servicesProvider = Provider.of<ServicesProvider>(context, listen: false);
-        
-        // Mostra loading enquanto verifica/abre sessão
-        if (!mounted) return;
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => Center(
-            child: H4ndLoading(size: 60),
-          ),
-        );
+        // Verifica se há venda pendente (apenas para venda balcão)
+        if (!_verificarVendaPendente()) {
+          LoadingHelper.hide(context);
+          return;
+        }
+
+        if (!mounted) {
+          LoadingHelper.hide(context);
+          return;
+        }
 
         // Carrega configuração do restaurante se necessário
-        if (!servicesProvider.configuracaoRestauranteCarregada) {
-          await servicesProvider.carregarConfiguracaoRestaurante();
-        }
+        await _carregarConfiguracao();
         
         if (!mounted) {
-          _fecharLoadingSeAberto(context);
-          return;
-        }
-        
-        // Usa os IDs que foram passados - não abre diálogos aqui
-        // A responsabilidade de abrir diálogos de seleção está nos chamadores desta tela
-        String? mesaIdFinal = widget.mesaId;
-        String? comandaIdFinal = widget.comandaId;
-        
-        debugPrint('📋 [NovoPedidoRestauranteScreen] Inicializando:');
-        debugPrint('  - MesaId recebido: $mesaIdFinal');
-        debugPrint('  - ComandaId recebido: $comandaIdFinal');
-
-        // Busca dados da mesa/comanda se houver
-        if (mesaIdFinal != null && mounted) {
-          final mesaResponse = await servicesProvider.mesaService.getMesaById(mesaIdFinal);
-          if (mesaResponse.success && mesaResponse.data != null && mounted) {
-            setState(() {
-              _mesa = mesaResponse.data;
-            });
-          }
-        }
-
-        if (comandaIdFinal != null && mounted) {
-          final comandaResponse = await servicesProvider.comandaService.getComandaById(comandaIdFinal);
-          if (comandaResponse.success && comandaResponse.data != null && mounted) {
-            setState(() {
-              _comanda = comandaResponse.data;
-            });
-          }
-        }
-
-        if (!mounted) {
-          _fecharLoadingSeAberto(context);
+          LoadingHelper.hide(context);
           return;
         }
 
-        // Não há validação obrigatória - tudo é opcional
-
-        debugPrint('📋 [NovoPedidoRestauranteScreen] Chamando iniciarNovoPedido:');
-        debugPrint('  - MesaId: $mesaIdFinal');
-        debugPrint('  - ComandaId: $comandaIdFinal');
-
-        final sucesso = await pedidoProvider.iniciarNovoPedido(
-          mesaId: mesaIdFinal,
-          comandaId: comandaIdFinal,
-          context: context,
-        );
+        // Busca dados de mesa/comanda se houver
+        await _buscarMesaOuComanda();
 
         if (!mounted) {
-          _fecharLoadingSeAberto(context);
+          LoadingHelper.hide(context);
+          return;
+        }
+
+        // Inicializa novo pedido no provider
+        final sucesso = await _iniciarPedido();
+
+        if (!mounted) {
+          LoadingHelper.hide(context);
           return;
         }
 
         // Fecha o loading
-        _fecharLoadingSeAberto(context);
+        LoadingHelper.hide(context);
 
         // Se usuário cancelou a abertura de sessão, volta para tela anterior
         if (!sucesso && widget.mesaId != null && mounted) {
           Navigator.of(context).pop();
         }
       } catch (e) {
-        if (!mounted) return;
+        // Fecha o loading em caso de erro
+        LoadingHelper.hide(context);
         
-        // Fecha o loading se ainda estiver aberto
-        _fecharLoadingSeAberto(context);
-        
-        debugPrint('Erro ao inicializar pedido: $e');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erro ao inicializar pedido: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        debugPrint('❌ Erro ao inicializar pedido: $e');
+        ErrorHelper.show(context, 'Erro ao inicializar pedido: ${e.toString()}');
       }
     });
   }
@@ -804,176 +830,6 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
     );
   }
 
-  /// Header compacto para modal mostrando mesa/comanda
-  Widget _buildMesaComandaHeaderCompact() {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (_mesa != null) ...[
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: AppTheme.primaryColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(
-                color: AppTheme.primaryColor.withOpacity(0.3),
-                width: 1,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.table_restaurant,
-                  size: 12,
-                  color: AppTheme.primaryColor,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  'Mesa ${_mesa!.numero}',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.primaryColor,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-        if (_mesa != null && _comanda != null)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: Icon(
-              Icons.arrow_forward,
-              size: 12,
-              color: AppTheme.textSecondary,
-            ),
-          ),
-        if (_comanda != null) ...[
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: AppTheme.successColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(
-                color: AppTheme.successColor.withOpacity(0.3),
-                width: 1,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.receipt_long,
-                  size: 12,
-                  color: AppTheme.successColor,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  'Comanda ${_comanda!.numero}',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.successColor,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  /// Banner compacto mostrando mesa/comanda vinculada ao pedido
-  Widget _buildMesaComandaBanner() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(
-          bottom: BorderSide(
-            color: Colors.grey.shade200,
-            width: 1,
-          ),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.02),
-            blurRadius: 2,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          if (_mesa != null) ...[
-            _buildBadge(
-              icon: Icons.table_restaurant,
-              label: _mesa!.numero,
-              color: AppTheme.primaryColor,
-            ),
-          ],
-          if (_mesa != null && _comanda != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Container(
-                width: 1,
-                height: 20,
-                color: Colors.grey.shade300,
-              ),
-            ),
-          if (_comanda != null)
-            _buildBadge(
-              icon: Icons.receipt_long,
-              label: _comanda!.numero,
-              color: Colors.indigo,
-            ),
-        ],
-      ),
-    );
-  }
-
-  /// Badge compacto com ícone e número
-  Widget _buildBadge({
-    required IconData icon,
-    required String label,
-    required Color color,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(
-          color: color.withOpacity(0.2),
-          width: 1,
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            icon,
-            size: 14,
-            color: color,
-          ),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: color,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
 
   Future<void> _finalizarPedido(BuildContext context) async {
@@ -989,76 +845,140 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
       return;
     }
 
-    // Mostra loading usando rootNavigator para garantir que aparece sobre tudo
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      useRootNavigator: true,
-      builder: (dialogContext) => Center(
-        child: H4ndLoading(size: 60),
-      ),
-    );
+    // Se for venda balcão, envia para API e salva vendaId pendente
+    // A BalcaoScreen detecta a venda pendente e abre o pagamento
+    if (widget.tipoVenda == TipoVenda.balcao) {
+      await _finalizarPedidoBalcao(context);
+      return;
+    }
+
+    // Mostra loading
+    LoadingHelper.show(context);
 
     try {
       // Finaliza o pedido e salva na base local
       final pedidoIdSalvo = await pedidoProvider.finalizarPedido();
 
-      if (!context.mounted) return;
+      if (!mounted) {
+        LoadingHelper.hide(context);
+        return;
+      }
 
-      // Fecha o loading usando rootNavigator
-      Navigator.of(context, rootNavigator: true).pop();
+      // Fecha o loading
+      LoadingHelper.hide(context);
 
       if (pedidoIdSalvo != null) {
         // A sincronização é automática via listener do Hive
         // Não precisa chamar manualmente
         
         // Mostra mensagem de sucesso
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.check_circle, color: Colors.white),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Pedido finalizado! Sincronizando...',
-                    style: GoogleFonts.plusJakartaSans(),
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.white),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Pedido finalizado! Sincronizando...',
+                      style: GoogleFonts.plusJakartaSans(),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 3),
+              behavior: SnackBarBehavior.floating,
             ),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 3),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+          );
+        }
 
         // Volta para a tela anterior após um breve delay
         // Usa rootNavigator: true porque a tela foi aberta com rootNavigator: true
         await Future.delayed(const Duration(milliseconds: 500));
-        if (context.mounted && Navigator.of(context, rootNavigator: true).canPop()) {
+        if (mounted && Navigator.of(context, rootNavigator: true).canPop()) {
           Navigator.of(context, rootNavigator: true).pop(true);
         }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Erro ao finalizar pedido. Tente novamente.'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ErrorHelper.show(context, 'Erro ao finalizar pedido. Tente novamente.');
       }
     } catch (e) {
-      if (!context.mounted) return;
+      LoadingHelper.hide(context);
       
-      // Fecha o loading se ainda estiver aberto usando rootNavigator
-      Navigator.of(context, rootNavigator: true).pop();
+      if (!mounted) return;
+      ErrorHelper.show(context, 'Erro ao finalizar pedido: $e');
+    }
+  }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erro ao finalizar pedido: $e'),
-          backgroundColor: Colors.red,
-      ),
-    );
+  /// Finaliza pedido balcão: envia para API e salva vendaId pendente
+  /// A BalcaoScreen detecta a venda pendente e abre o pagamento automaticamente
+  /// Esta tela apenas cria o pedido, não gerencia o pagamento
+  Future<void> _finalizarPedidoBalcao(BuildContext context) async {
+    final pedidoProvider = Provider.of<PedidoProvider>(context, listen: false);
+    final servicesProvider = Provider.of<ServicesProvider>(context, listen: false);
+    final pedidoService = servicesProvider.pedidoService;
+
+    // Mostra loading
+    LoadingHelper.show(context);
+
+    try {
+      // Obtém pedido atual
+      final pedidoLocal = pedidoProvider.pedidoAtual;
+      if (pedidoLocal == null || pedidoLocal.itens.isEmpty) {
+        LoadingHelper.hide(context);
+        ErrorHelper.show(context, 'Adicione pelo menos um item ao pedido');
+        return;
+      }
+
+      // Converte PedidoLocal para DTO usando método do próprio modelo
+      final dto = pedidoLocal.toCreateDto();
+
+      // Envia para API
+      final response = await pedidoService.createPedido(dto);
+
+      if (!mounted) {
+        LoadingHelper.hide(context);
+        return;
+      }
+      
+      LoadingHelper.hide(context);
+
+      if (!response.success || response.data == null) {
+        final mensagemErro = response.message.isNotEmpty 
+            ? response.message 
+            : 'Erro ao criar pedido. Tente novamente.';
+        ErrorHelper.show(context, mensagemErro);
+        return;
+      }
+
+      // Parsear resposta para PedidoDto
+      final pedidoDto = PedidoDto.fromJson(response.data!);
+
+      if (pedidoDto.vendaId == null) {
+        ErrorHelper.show(context, 'Erro ao criar pedido. Tente novamente.');
+        return;
+      }
+
+      // Limpa o pedido atual no provider (já foi enviado)
+      pedidoProvider.limparPedido();
+
+      // Salva vendaId pendente usando provider
+      // A BalcaoScreen detecta isso e abre o pagamento automaticamente
+      final vendaBalcaoProvider = Provider.of<VendaBalcaoProvider>(context, listen: false);
+      await vendaBalcaoProvider.salvarVendaPendente(pedidoDto.vendaId!);
+      debugPrint('✅ VendaId salvo como pendente: ${pedidoDto.vendaId}');
+
+      // Fecha tela de pedido
+      // A BalcaoScreen vai detectar a venda pendente e abrir o pagamento
+      if (mounted && Navigator.of(context, rootNavigator: true).canPop()) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+    } catch (e) {
+      LoadingHelper.hide(context);
+      
+      if (!mounted) return;
+      ErrorHelper.show(context, 'Erro ao finalizar pedido: $e');
     }
   }
 

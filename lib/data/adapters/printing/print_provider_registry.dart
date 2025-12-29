@@ -2,7 +2,6 @@ import '../../../../core/printing/print_provider.dart';
 import 'package:flutter/foundation.dart';
 import 'providers/elgin_thermal_adapter.dart';
 import 'providers/pdf_printer_adapter.dart';
-import 'providers/stone_p2_deeplink_print_adapter.dart';
 import '../../../../core/printing/print_config.dart';
 import '../../../../core/config/flavor_config.dart';
 
@@ -73,13 +72,6 @@ class PrintProviderRegistry {
   static Future<void> registerAll(PrintConfig config) async {
     // PDF sempre disponível
     registerProvider('pdf', (_) => PDFPrinterAdapter());
-    
-    // Providers específicos por dispositivo (condicionais baseados na config)
-    if (config.canUseProvider('stone_p2_deeplink')) {
-      registerProvider('stone_p2_deeplink', (settings) {
-        return StoneP2DeepLinkPrintAdapter();
-      });
-    }
     
     if (config.canUseProvider('stone_thermal')) {
       // Só registra se o flavor for stoneP2

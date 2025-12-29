@@ -20,14 +20,18 @@ import '../../core/events/app_event_bus.dart';
 class PagamentoRestauranteScreen extends StatefulWidget {
   final VendaDto venda;
   final List<ProdutoAgrupado> produtosAgrupados;
-  final VoidCallback? onPaymentSuccess;
+  /// Callback chamado quando um pagamento é processado com sucesso (mesmo que parcial)
+  final VoidCallback? onPagamentoProcessado;
+  /// Callback chamado quando a venda é concluída/finalizada
+  final VoidCallback? onVendaConcluida;
   final bool isModal; // Indica se deve ser exibido como modal
 
   const PagamentoRestauranteScreen({
     super.key,
     required this.venda,
     required this.produtosAgrupados,
-    this.onPaymentSuccess,
+    this.onPagamentoProcessado,
+    this.onVendaConcluida,
     this.isModal = false,
   });
 
@@ -38,7 +42,8 @@ class PagamentoRestauranteScreen extends StatefulWidget {
     BuildContext context, {
     required VendaDto venda,
     required List<ProdutoAgrupado> produtosAgrupados,
-    VoidCallback? onPaymentSuccess,
+    VoidCallback? onPagamentoProcessado,
+    VoidCallback? onVendaConcluida,
   }) async {
     final adaptive = AdaptiveLayoutProvider.of(context);
     
@@ -50,7 +55,8 @@ class PagamentoRestauranteScreen extends StatefulWidget {
             child: PagamentoRestauranteScreen(
               venda: venda,
               produtosAgrupados: produtosAgrupados,
-              onPaymentSuccess: onPaymentSuccess,
+              onPagamentoProcessado: onPagamentoProcessado,
+              onVendaConcluida: onVendaConcluida,
               isModal: false,
             ),
           ),
@@ -66,7 +72,8 @@ class PagamentoRestauranteScreen extends StatefulWidget {
         child: PagamentoRestauranteScreen(
           venda: venda,
           produtosAgrupados: produtosAgrupados,
-          onPaymentSuccess: onPaymentSuccess,
+          onPagamentoProcessado: onPagamentoProcessado,
+          onVendaConcluida: onVendaConcluida,
           isModal: true,
         ),
       ),
@@ -90,6 +97,9 @@ class _PagamentoRestauranteScreenState extends State<PagamentoRestauranteScreen>
   
   // Produtos selecionados para pagamento (quando emitirNotaParcial = true)
   final Map<String, double> _produtosSelecionados = {}; // produtoId -> quantidade selecionada
+  
+  // Venda atualizada (para refletir mudanças após pagamentos)
+  VendaDto? _vendaAtualizada;
 
   VendaService get _vendaService {
     final servicesProvider = Provider.of<ServicesProvider>(context, listen: false);
@@ -130,9 +140,12 @@ class _PagamentoRestauranteScreenState extends State<PagamentoRestauranteScreen>
     }
   }
 
-  double get _valorTotal => widget.venda.valorTotal;
-  double get _totalPago => widget.venda.totalPago;
-  double get _saldoRestante => widget.venda.saldoRestante;
+  // Usa venda atualizada se disponível, senão usa a venda original
+  VendaDto get _vendaAtual => _vendaAtualizada ?? widget.venda;
+  
+  double get _valorTotal => _vendaAtual.valorTotal;
+  double get _totalPago => _vendaAtual.totalPago;
+  double get _saldoRestante => _vendaAtual.saldoRestante;
 
   double? get _valorDigitado {
     final valor = double.tryParse(_valorController.text.replaceAll(',', '.'));
@@ -343,20 +356,42 @@ class _PagamentoRestauranteScreenState extends State<PagamentoRestauranteScreen>
             // Limpa seleção de produtos
             _produtosSelecionados.clear();
             
-            if (widget.onPaymentSuccess != null) {
-              widget.onPaymentSuccess!();
+            // Chama onPagamentoProcessado quando um pagamento é processado (mesmo que parcial)
+            // Isso permite que o chamador saiba que houve um pagamento e pode reagir
+            if (widget.onPagamentoProcessado != null) {
+              widget.onPagamentoProcessado!();
             }
             
-            // Calcula saldo localmente (sem buscar do servidor)
-            // O provider já atualiza localmente via evento pagamentoProcessado acima
-            final saldoAnterior = widget.venda.saldoRestante;
-            final novoSaldo = saldoAnterior - valor;
+            // Busca venda atualizada do servidor para refletir o novo pagamento
+            // Isso garante que temos os dados corretos (incluindo o pagamento recém-criado)
+            final vendaResponse = await _vendaService.getVendaById(widget.venda.id);
             
-            if (novoSaldo <= 0.01) {
-              // Saldo zerou - oferece conclusão
-              _oferecerConclusaoVenda();
+            if (vendaResponse.success && vendaResponse.data != null) {
+              setState(() {
+                _vendaAtualizada = vendaResponse.data!;
+                _valorController.text = _saldoRestante > 0.01 
+                    ? _saldoRestante.toStringAsFixed(2) 
+                    : '0.00';
+              });
+              
+              // Se saldo zerou, a UI será atualizada automaticamente para mostrar botão "Concluir Venda"
+              // Não fecha a tela - deixa o usuário escolher se quer concluir
+              if (_saldoRestante > 0.01) {
+                // Ainda há saldo - fecha tela para permitir novo pagamento
+                Navigator.of(context).pop(true);
+              }
+              // Se saldo zerou, mantém a tela aberta mostrando o botão "Concluir Venda"
             } else {
-              Navigator.of(context).pop(true);
+              // Se não conseguir buscar venda atualizada, calcula localmente
+              final saldoAnterior = widget.venda.saldoRestante;
+              final novoSaldo = saldoAnterior - valor;
+              
+              if (novoSaldo <= 0.01) {
+                // Saldo zerou - oferece conclusão (fallback)
+                _oferecerConclusaoVenda();
+              } else {
+                Navigator.of(context).pop(true);
+              }
             }
           } else {
             AppToast.showError(context, 'Erro ao registrar pagamento no servidor');
@@ -438,8 +473,10 @@ class _PagamentoRestauranteScreenState extends State<PagamentoRestauranteScreen>
           );
         }
         
-        if (widget.onPaymentSuccess != null) {
-          widget.onPaymentSuccess!();
+        // Chama onVendaConcluida quando a venda é realmente concluída/finalizada
+        // Isso é diferente de onPagamentoProcessado que é chamado a cada pagamento
+        if (widget.onVendaConcluida != null) {
+          widget.onVendaConcluida!();
         }
         
         Navigator.of(context).pop(true);
@@ -528,7 +565,7 @@ class _PagamentoRestauranteScreenState extends State<PagamentoRestauranteScreen>
         return const Center(child: CircularProgressIndicator());
       }
       
-      final padding = adaptive.isMobile ? 16.0 : 20.0;
+      final saldoZero = _saldoRestante <= 0.01;
       
       return Column(
         mainAxisSize: MainAxisSize.min,
@@ -536,11 +573,12 @@ class _PagamentoRestauranteScreenState extends State<PagamentoRestauranteScreen>
           // Resumo da venda
           _buildResumoVenda(adaptive),
           
-          // Opção de emitir nota parcial
-          _buildOpcaoNotaParcial(adaptive),
+          // Opção de emitir nota parcial (apenas se houver saldo)
+          if (!saldoZero)
+            _buildOpcaoNotaParcial(adaptive),
           
           // Lista de produtos (se emitir nota parcial estiver marcado)
-          if (_emitirNotaParcial)
+          if (!saldoZero && _emitirNotaParcial)
             widget.isModal
                 ? ConstrainedBox(
                     constraints: BoxConstraints(
@@ -1038,6 +1076,7 @@ class _PagamentoRestauranteScreenState extends State<PagamentoRestauranteScreen>
   Widget _buildFormularioPagamento(AdaptiveLayoutProvider adaptive) {
     final valorProdutos = _emitirNotaParcial ? _calcularValorProdutosSelecionados() : 0.0;
     final padding = adaptive.isMobile ? 16.0 : 20.0;
+    final saldoZero = _saldoRestante <= 0.01;
     
     return Container(
       margin: EdgeInsets.fromLTRB(padding, 12, padding, padding),
@@ -1060,162 +1099,244 @@ class _PagamentoRestauranteScreenState extends State<PagamentoRestauranteScreen>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Valor dos produtos selecionados (se emitir nota parcial)
-          if (_emitirNotaParcial && _temProdutosSelecionados) ...[
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Valor Selecionado',
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    color: AppTheme.textSecondary,
-                  ),
-                ),
-                Text(
-                  'R\$ ${valorProdutos.toStringAsFixed(2)}',
-                  style: GoogleFonts.inter(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.primaryColor,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-          ],
-          
-          // Campo de valor
-          TextField(
-            controller: _valorController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: InputDecoration(
-              labelText: 'Valor do Pagamento',
-              hintText: '0.00',
-              prefixIcon: const Icon(Icons.attach_money, size: 20),
-              border: OutlineInputBorder(
+          // Se saldo é zero, mostra mensagem e botão de concluir
+          if (saldoZero) ...[
+            Container(
+              padding: EdgeInsets.all(adaptive.isMobile ? 16 : 20),
+              decoration: BoxDecoration(
+                color: AppTheme.successColor.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: AppTheme.successColor.withOpacity(0.3),
+                  width: 1,
+                ),
               ),
-              filled: true,
-              fillColor: Colors.grey.shade50,
-              contentPadding: EdgeInsets.symmetric(
-                horizontal: adaptive.isMobile ? 16 : 20,
-                vertical: adaptive.isMobile ? 16 : 18,
-              ),
-            ),
-            style: GoogleFonts.inter(
-              fontSize: adaptive.isMobile ? 15 : 16,
-            ),
-            onChanged: (value) {
-              setState(() {});
-            },
-          ),
-          
-          const SizedBox(height: 16),
-          
-          // Métodos de pagamento
-          if (_paymentMethods.isNotEmpty) ...[
-            Text(
-              'Forma de Pagamento',
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 12),
-            // Métodos de pagamento com scroll horizontal para não ultrapassar a tela
-            SizedBox(
-              height: 50,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                itemCount: _paymentMethods.length,
-                itemBuilder: (context, index) {
-                  final method = _paymentMethods[index];
-                  final isSelected = _selectedMethod == method;
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ChoiceChip(
-                      label: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(method.icon, size: 18),
-                          const SizedBox(width: 6),
-                          Text(
-                            method.label,
-                            style: GoogleFonts.inter(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                      selected: isSelected,
-                      onSelected: (selected) {
-                        setState(() {
-                          _selectedMethod = method;
-                        });
-                      },
-                      selectedColor: AppTheme.primaryColor,
-                      backgroundColor: Colors.grey.shade100,
-                      labelStyle: GoogleFonts.inter(
-                        color: isSelected ? Colors.white : AppTheme.textPrimary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        side: BorderSide(
-                          color: isSelected ? AppTheme.primaryColor : Colors.grey.shade300,
-                          width: isSelected ? 2 : 1,
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.check_circle_outline,
+                    color: AppTheme.successColor,
+                    size: 48,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Saldo Totalmente Pago',
+                    style: GoogleFonts.inter(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.successColor,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Todos os pagamentos foram realizados. Conclua a venda para finalizar.',
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      color: AppTheme.textSecondary,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _isProcessing ? null : _concluirVenda,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryColor,
+                        foregroundColor: Colors.white,
+                        padding: EdgeInsets.symmetric(
+                          vertical: adaptive.isMobile ? 14 : 16,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
                         ),
                       ),
+                      child: _isProcessing
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            )
+                          : Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.check_circle, size: 20),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Concluir Venda',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
                     ),
-                  );
-                },
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 16),
-          ],
-          
-          const SizedBox(height: 12),
-          
-          // Botão de pagar
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _isProcessing ? null : _processarPagamento,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.successColor,
-                foregroundColor: Colors.white,
-                padding: EdgeInsets.symmetric(
-                  vertical: adaptive.isMobile ? 14 : 16,
-                ),
-                shape: RoundedRectangleBorder(
+          ] else ...[
+            // Valor dos produtos selecionados (se emitir nota parcial)
+            if (_emitirNotaParcial && _temProdutosSelecionados) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Valor Selecionado',
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+                  Text(
+                    'R\$ ${valorProdutos.toStringAsFixed(2)}',
+                    style: GoogleFonts.inter(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.primaryColor,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+            ],
+            
+            // Campo de valor
+            TextField(
+              controller: _valorController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                labelText: 'Valor do Pagamento',
+                hintText: '0.00',
+                prefixIcon: const Icon(Icons.attach_money, size: 20),
+                border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
+                filled: true,
+                fillColor: Colors.grey.shade50,
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: adaptive.isMobile ? 16 : 20,
+                  vertical: adaptive.isMobile ? 16 : 18,
+                ),
               ),
-              child: _isProcessing
-                  ? const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                      ),
-                    )
-                  : Text(
-                      'Pagar',
-                      style: GoogleFonts.inter(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
+              style: GoogleFonts.inter(
+                fontSize: adaptive.isMobile ? 15 : 16,
+              ),
+              onChanged: (value) {
+                setState(() {});
+              },
             ),
-          ),
+            
+            const SizedBox(height: 16),
+            
+            // Métodos de pagamento
+            if (_paymentMethods.isNotEmpty) ...[
+              Text(
+                'Forma de Pagamento',
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Métodos de pagamento com scroll horizontal para não ultrapassar a tela
+              SizedBox(
+                height: 50,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _paymentMethods.length,
+                  itemBuilder: (context, index) {
+                    final method = _paymentMethods[index];
+                    final isSelected = _selectedMethod == method;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ChoiceChip(
+                        label: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(method.icon, size: 18),
+                            const SizedBox(width: 6),
+                            Text(
+                              method.label,
+                              style: GoogleFonts.inter(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                        selected: isSelected,
+                        onSelected: (selected) {
+                          setState(() {
+                            _selectedMethod = method;
+                          });
+                        },
+                        selectedColor: AppTheme.primaryColor,
+                        backgroundColor: Colors.grey.shade100,
+                        labelStyle: GoogleFonts.inter(
+                          color: isSelected ? Colors.white : AppTheme.textPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          side: BorderSide(
+                            color: isSelected ? AppTheme.primaryColor : Colors.grey.shade300,
+                            width: isSelected ? 2 : 1,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+            
+            const SizedBox(height: 12),
+            
+            // Botão de pagar
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _isProcessing ? null : _processarPagamento,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.successColor,
+                  foregroundColor: Colors.white,
+                  padding: EdgeInsets.symmetric(
+                    vertical: adaptive.isMobile ? 14 : 16,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: _isProcessing
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      )
+                    : Text(
+                        'Pagar',
+                        style: GoogleFonts.inter(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+              ),
+            ),
+          ],
         ],
       ),
     );

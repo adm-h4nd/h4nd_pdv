@@ -6,6 +6,7 @@ import '../../../screens/home/home_unified_screen.dart';
 import '../../../screens/mesas/mesas_screen.dart';
 import '../../../screens/comandas/comandas_screen.dart';
 import '../../../screens/pedidos/pedidos_screen.dart';
+import '../../../screens/balcao/balcao_screen.dart';
 import '../../../screens/patio/patio_screen.dart';
 import '../../../screens/profile/profile_screen.dart';
 
@@ -21,10 +22,13 @@ class _HomeNavigationState extends State<HomeNavigation> {
   int _currentIndex = 0;
   int? _setor;
   bool _isLoadingSetor = true;
+  final ValueNotifier<int> _navigationIndexNotifier = ValueNotifier<int>(0);
 
   @override
   void initState() {
     super.initState();
+    // Inicializa o notifier com o índice inicial
+    _navigationIndexNotifier.value = _currentIndex;
     // Usa WidgetsBinding para garantir que o contexto está pronto
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadSetor();
@@ -146,6 +150,16 @@ class _HomeNavigationState extends State<HomeNavigation> {
           );
         }
         
+        // Adiciona item "Balcão" para venda balcão
+        // Não usa const para garantir que a tela seja reconstruída quando necessário
+        items.add(
+          NavigationItem(
+            icon: Icons.shopping_cart,
+            label: 'Balcão',
+            screen: BalcaoScreen(hideAppBar: true),
+          ),
+        );
+        
         items.add(
           NavigationItem(
             icon: Icons.person,
@@ -211,6 +225,7 @@ class _HomeNavigationState extends State<HomeNavigation> {
                   setState(() {
                     _currentIndex = index;
                   });
+                  _navigationIndexNotifier.value = index;
                 },
                 borderRadius: BorderRadius.circular(16),
                 child: AnimatedContainer(
@@ -309,7 +324,19 @@ class _HomeNavigationState extends State<HomeNavigation> {
         return Scaffold(
           body: IndexedStack(
             index: _currentIndex,
-            children: navigationItems.map((item) => item.screen).toList(),
+            children: navigationItems.asMap().entries.map((entry) {
+              final index = entry.key;
+              final item = entry.value;
+              // Passa o notifier para BalcaoScreen se for a tela balcão
+              if (item.screen is BalcaoScreen) {
+                return BalcaoScreen(
+                  hideAppBar: (item.screen as BalcaoScreen).hideAppBar,
+                  navigationIndexNotifier: _navigationIndexNotifier,
+                  screenIndex: index,
+                );
+              }
+              return item.screen;
+            }).toList(),
           ),
           bottomNavigationBar: Container(
             decoration: BoxDecoration(

@@ -101,5 +101,39 @@ class PedidoLocal {
     itens.clear();
     dataAtualizacao = DateTime.now();
   }
+
+  /// Converte PedidoLocal para CreatePedidoDto (Map) para envio à API
+  /// Usado para vendas balcão que são enviadas diretamente para API
+  Map<String, dynamic> toCreateDto() {
+    final dto = {
+      'tipo': 2, // TipoPedido.Venda
+      'tipoContexto': 1, // TipoContextoPedido.Direto (venda balcão não tem mesa/comanda)
+      'clienteNome': 'Consumidor Final',
+      'observacoes': observacoesGeral,
+      'itens': itens.map((item) {
+        final itemMap = <String, dynamic>{
+          'produtoId': item.produtoId,
+          'produtoVariacaoId': item.produtoVariacaoId,
+          'quantidade': item.quantidade,
+          'precoUnitario': item.precoUnitario,
+          'observacoes': item.observacoes,
+        };
+
+        // Adicionar componentes removidos se houver
+        if (item.componentesRemovidos.isNotEmpty) {
+          itemMap['componentesRemovidos'] = item.componentesRemovidos.map((componenteId) {
+            return {
+              'componenteId': componenteId,
+              'componenteNome': '', // Backend buscará se necessário
+            };
+          }).toList();
+        }
+
+        return itemMap;
+      }).toList(),
+    };
+
+    return dto;
+  }
 }
 

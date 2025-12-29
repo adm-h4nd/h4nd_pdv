@@ -24,7 +24,6 @@ import '../pedidos/restaurante/dialogs/selecionar_mesa_comanda_dialog.dart';
 import '../patio/patio_screen.dart';
 import '../pedidos/pedidos_screen.dart';
 import '../profile/profile_screen.dart';
-import '../../../core/payment/pagamento_pendente_manager.dart';
 
 /// Tela de home unificada e personalizável
 class HomeUnifiedScreen extends StatefulWidget {
@@ -75,13 +74,6 @@ class _HomeUnifiedScreenState extends State<HomeUnifiedScreen> {
             _isLoading = false;
           });
           
-          // Verifica pagamentos pendentes após login bem-sucedido
-          // Aguarda um pouco para garantir que a UI está pronta
-          Future.delayed(const Duration(milliseconds: 1000), () {
-            if (mounted) {
-              PagamentoPendenteManager.instance.verificarPagamentosPendentes();
-            }
-          });
         }
       }
     } catch (e) {

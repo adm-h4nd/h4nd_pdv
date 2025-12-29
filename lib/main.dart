@@ -11,14 +11,12 @@ import 'presentation/providers/auth_provider.dart';
 import 'presentation/providers/services_provider.dart';
 import 'presentation/providers/sync_provider.dart';
 import 'presentation/providers/pedido_provider.dart';
+import 'presentation/providers/venda_balcao_provider.dart';
 import 'core/theme/app_theme.dart';
 import 'core/adaptive_layout/adaptive_layout.dart';
 import 'screens/splash/splash_screen.dart';
 import 'presentation/screens/server_config/server_config_screen.dart';
 import 'core/payment/payment_service.dart';
-import 'core/payment/pagamento_pendente_manager.dart';
-import 'core/payment/pagamento_pendente_service.dart';
-import 'data/repositories/pagamento_pendente_repository.dart';
 import 'package:flutter/foundation.dart';
 
 // NavigatorKey global para acessar context em qualquer lugar
@@ -142,28 +140,10 @@ Future<void> initializeApp() async {
     final tempServicesProvider = ServicesProvider(authService);
     debugPrint('✅ [INIT] ServicesProvider criado');
     
-    // Configura PaymentService com VendaService (para callbacks de deeplink)
+    // Configura PaymentService
     debugPrint('💳 [INIT] Configurando PaymentService...');
     await PaymentService.getInstance();
-    PaymentService.setVendaService(tempServicesProvider.vendaService);
     debugPrint('✅ [INIT] PaymentService configurado');
-    
-    // Configura PagamentoPendenteManager
-    debugPrint('💰 [INIT] Configurando PagamentoPendenteManager...');
-    final pagamentoPendenteRepo = PagamentoPendenteRepository();
-    final pagamentoPendenteService = PagamentoPendenteService(
-      repository: pagamentoPendenteRepo,
-      vendaService: tempServicesProvider.vendaService,
-    );
-    
-    PagamentoPendenteManager.instance.initialize(
-      service: pagamentoPendenteService,
-      navigatorKey: navigatorKey,
-      vendaService: tempServicesProvider.vendaService,
-      mesaService: tempServicesProvider.mesaService,
-      comandaService: tempServicesProvider.comandaService,
-    );
-    debugPrint('✅ [INIT] PagamentoPendenteManager inicializado');
     
     debugPrint('🎨 [INIT] Iniciando app principal...');
     runApp(
@@ -206,14 +186,11 @@ class MXCloudPDVApp extends StatelessWidget {
           create: (_) => servicesProvider.syncProvider,
           update: (_, services, __) => services.syncProvider,
         ),
-        ChangeNotifierProxyProvider<ServicesProvider, PedidoProvider>(
+        ChangeNotifierProvider(
           create: (_) => PedidoProvider(),
-          update: (_, services, previous) {
-            final provider = previous ?? PedidoProvider();
-            provider.mesaService = services.mesaService;
-            provider.comandaService = services.comandaService;
-            return provider;
-          },
+        ),
+        ChangeNotifierProvider(
+          create: (_) => VendaBalcaoProvider(),
         ),
       ],
       child: MaterialApp(

@@ -1,5 +1,9 @@
+import 'package:flutter/foundation.dart';
 import '../storage/preferences_service.dart';
 import '../constants/storage_keys.dart';
+import '../../data/models/core/app_config.dart';
+import 'app_config_service.dart';
+import 'server_config_service.dart';
 
 /// Configuração de ambiente da aplicação
 abstract class EnvConfig {
@@ -10,19 +14,50 @@ abstract class EnvConfig {
   Duration get requestTimeout;
 }
 
-/// Configuração de desenvolvimento
-class DevConfig implements EnvConfig {
-  // Para desenvolvimento local, aponta para o servidor rodando no Mac
-  // IP do Mac na rede local: 192.168.0.6
-  // Porta 5101 para servidor local (5100 é para cloud)
+/// Configuração baseada nas configs salvas do backend
+/// A URL da API vem do ServerConfigService (configurada pelo usuário)
+class SavedAppConfig implements EnvConfig {
+  final AppConfig _config;
+
+  SavedAppConfig(this._config);
+
   @override
-  String get apiBaseUrl => 'http://192.168.0.6:5101';
+  String get apiBaseUrl {
+    // A URL da API vem do ServerConfigService (o que o usuário digitou)
+    final serverUrl = ServerConfigService.getServerUrl() ?? '';
+    if (serverUrl.isEmpty) {
+      // Fallback para padrão se não tiver configurado
+      return 'https://api-hml.h4nd.com.br';
+    }
+    return serverUrl;
+  }
+
+  @override
+  String get apiUrl {
+    // Usa ServerConfigService.getApiUrl() que já adiciona /api se necessário
+    return ServerConfigService.getApiUrl();
+  }
+
+  @override
+  String get s3BaseUrl => _config.s3BaseUrl;
+
+  @override
+  bool get isProduction => _config.environment == 'Production';
+
+  @override
+  Duration get requestTimeout => const Duration(seconds: 30);
+}
+
+/// Configuração de desenvolvimento (fallback)
+class DevConfig implements EnvConfig {
+  @override
+  String get apiBaseUrl => 'https://api-hml.h4nd.com.br';
   
   @override
   String get apiUrl => '$apiBaseUrl/api';
   
   @override
-  String get s3BaseUrl => 'https://mx-cloud.s3.us-east-1.amazonaws.com';
+  String get s3BaseUrl => 'https://h4nd-client-hml.s3.us-east-1.amazonaws.com';
   
   @override
   bool get isProduction => false;
@@ -31,16 +66,16 @@ class DevConfig implements EnvConfig {
   Duration get requestTimeout => const Duration(seconds: 30);
 }
 
-/// Configuração de produção
+/// Configuração de produção (fallback)
 class ProdConfig implements EnvConfig {
   @override
-  String get apiBaseUrl => 'http://ec2-54-198-150-183.compute-1.amazonaws.com:5100';
+  String get apiBaseUrl => 'https://api.h4nd.com.br';
   
   @override
   String get apiUrl => '$apiBaseUrl/api';
   
   @override
-  String get s3BaseUrl => 'https://mx-cloud.s3.us-east-1.amazonaws.com';
+  String get s3BaseUrl => 'https://h4nd-client.s3.us-east-1.amazonaws.com';
   
   @override
   bool get isProduction => true;
@@ -49,7 +84,7 @@ class ProdConfig implements EnvConfig {
   Duration get requestTimeout => const Duration(seconds: 30);
 }
 
-/// Configuração dinâmica que lê do storage
+/// Configuração dinâmica que lê do storage (legado - mantido para compatibilidade)
 class DynamicConfig implements EnvConfig {
   final String _baseUrl;
 
@@ -60,12 +95,12 @@ class DynamicConfig implements EnvConfig {
 
   @override
   String get apiUrl => '$apiBaseUrl/api';
-
+  
   @override
-  String get s3BaseUrl => 'https://mx-cloud.s3.us-east-1.amazonaws.com';
-
+  String get s3BaseUrl => 'https://h4nd-client-hml.s3.us-east-1.amazonaws.com';
+  
   @override
-  bool get isProduction => false; // Sempre false para servidor local configurado
+  bool get isProduction => false;
 
   @override
   Duration get requestTimeout => const Duration(seconds: 30);
@@ -73,13 +108,20 @@ class DynamicConfig implements EnvConfig {
 
 /// Factory para obter configuração baseada no ambiente
 class Environment {
-  /// Obtém configuração, verificando primeiro o storage
+  /// Obtém configuração, verificando primeiro as configs salvas do backend
   /// Se não tiver config salva, retorna null (para forçar configuração)
   static EnvConfig? getConfigOrNull() {
-    // Usa PreferencesService diretamente para evitar circular dependency
-    final savedUrl = PreferencesService.getString('mx-cloud-server-url');
+    // Primeiro, tenta usar as configs salvas do backend
+    final savedConfig = AppConfigService.loadFromStorage();
+    if (savedConfig != null) {
+      debugPrint('✅ [Environment] Usando config salva do backend');
+      return SavedAppConfig(savedConfig);
+    }
     
+    // Fallback: verifica se tem URL do servidor salva (compatibilidade)
+    final savedUrl = PreferencesService.getString(StorageKeys.serverUrl);
     if (savedUrl != null && savedUrl.isNotEmpty) {
+      debugPrint('⚠️ [Environment] Usando URL do servidor (legado)');
       return DynamicConfig(savedUrl);
     }
     
@@ -94,12 +136,10 @@ class Environment {
     }
     
     // Se não tiver config salva, usa configuração padrão baseada no ambiente
-    // Por padrão, usar servidor de produção
-    // Pode ser alterado via flavor ou variável de ambiente
     const bool isProd = bool.fromEnvironment('dart.vm.product', defaultValue: false);
-    // Também verifica variável de ambiente customizada para forçar produção
     const bool forceProd = bool.fromEnvironment('FORCE_PROD', defaultValue: false);
-    // Por padrão, sempre usa produção (ambos DevConfig e ProdConfig apontam para o servidor)
+    
+    debugPrint('📋 [Environment] Usando config padrão (isProd: $isProd, forceProd: $forceProd)');
     return (isProd || forceProd) ? ProdConfig() : DevConfig();
   }
 }

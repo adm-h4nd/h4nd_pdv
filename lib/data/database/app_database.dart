@@ -8,7 +8,6 @@ import '../models/local/exibicao_produto_local.dart';
 import '../models/local/item_pedido_local.dart';
 import '../models/local/pedido_local.dart';
 import '../models/local/sync_status_pedido.dart';
-import '../models/local/pagamento_pendente_local.dart';
 import '../models/local/mesa_local.dart';
 import '../models/local/comanda_local.dart';
 import '../models/local/configuracao_restaurante_local.dart';
@@ -84,10 +83,6 @@ class AppDatabase {
       if (!Hive.isAdapterRegistered(16)) {
         Hive.registerAdapter(HomeWidgetPositionAdapter());
         debugPrint('✅ Adapter HomeWidgetPosition (typeId: 16) registrado');
-      }
-      if (!Hive.isAdapterRegistered(20)) {
-        Hive.registerAdapter(PagamentoPendenteLocalAdapter());
-        debugPrint('✅ Adapter PagamentoPendenteLocal (typeId: 20) registrado');
       }
       if (!Hive.isAdapterRegistered(21)) {
         Hive.registerAdapter(MesaLocalAdapter());

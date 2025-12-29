@@ -58,6 +58,9 @@ enum TipoEvento {
   /// Pagamento processado
   pagamentoProcessado,
   
+  /// Venda balcão pendente criada (aguardando pagamento)
+  vendaBalcaoPendenteCriada,
+  
   // === SINCRONIZAÇÃO ===
   /// Sincronização iniciada
   sincronizacaoIniciada,
@@ -440,6 +443,18 @@ class AppEventBus {
         'valor': valor,
         if (mesaId != null) 'mesaId': mesaId,
         if (comandaId != null) 'comandaId': comandaId,
+      },
+    ));
+  }
+
+  void dispararVendaBalcaoPendenteCriada({
+    required String vendaId,
+  }) {
+    disparar(AppEvent(
+      tipo: TipoEvento.vendaBalcaoPendenteCriada,
+      dominio: DominioEvento.venda,
+      dados: {
+        'vendaId': vendaId,
       },
     ));
   }

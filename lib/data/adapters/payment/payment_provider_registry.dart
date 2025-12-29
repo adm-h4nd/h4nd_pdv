@@ -1,8 +1,6 @@
 import '../../../../core/payment/payment_provider.dart';
 import 'package:flutter/foundation.dart';
 import 'providers/cash_payment_adapter.dart';
-import 'providers/deep_link_payment_adapter.dart';
-import 'providers/stone_p2_deeplink_payment_adapter.dart';
 import '../../../../core/payment/payment_config.dart';
 import '../../../../core/config/flavor_config.dart';
 
@@ -78,17 +76,6 @@ class PaymentProviderRegistry {
   static Future<void> registerAll(PaymentConfig config) async {
     // Dinheiro sempre disponível
     registerProvider('cash', (_) => CashPaymentAdapter());
-    
-    // DeepLink genérico sempre disponível
-    registerProvider('deep_link', (_) => DeepLinkPaymentAdapter());
-    registerProvider('pix', (_) => DeepLinkPaymentAdapter());
-    
-    // Providers específicos por dispositivo (condicionais baseados na config)
-    if (config.canUseProvider('stone_p2_deeplink')) {
-      registerProvider('stone_p2_deeplink', (settings) {
-        return StoneP2DeepLinkPaymentAdapter();
-      });
-    }
     
     if (config.canUseProvider('stone_pos')) {
       // Só registra se o flavor for stoneP2

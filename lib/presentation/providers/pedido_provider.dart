@@ -1,37 +1,18 @@
-import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../../data/models/local/pedido_local.dart';
 import '../../data/models/local/item_pedido_local.dart';
 import '../../data/models/local/sync_status_pedido.dart';
 import '../../data/repositories/pedido_local_repository.dart';
 import '../../screens/pedidos/restaurante/modals/selecionar_produto_modal.dart';
-import '../../data/services/modules/restaurante/mesa_service.dart';
-import '../../data/services/modules/restaurante/comanda_service.dart';
-import '../../core/theme/app_theme.dart';
-import '../../core/events/app_event_bus.dart';
 import 'package:uuid/uuid.dart';
-import 'package:provider/provider.dart';
-import 'services_provider.dart';
 
 /// Provider para gerenciar o pedido em construção
+/// Responsável apenas pelo gerenciamento de estado do pedido local
 class PedidoProvider extends ChangeNotifier {
   PedidoLocal? _pedidoAtual;
   final _pedidoRepo = PedidoLocalRepository();
-  MesaService? _mesaService;
-  ComandaService? _comandaService;
 
   PedidoLocal? get pedidoAtual => _pedidoAtual;
-  
-  /// Define o serviço de mesa (deve ser injetado)
-  set mesaService(MesaService service) {
-    _mesaService = service;
-  }
-
-  /// Define o serviço de comanda (deve ser injetado)
-  set comandaService(ComandaService service) {
-    _comandaService = service;
-  }
 
   /// Total do pedido
   double get total => _pedidoAtual?.total ?? 0.0;
@@ -67,7 +48,6 @@ class PedidoProvider extends ChangeNotifier {
   Future<bool> iniciarNovoPedido({
     String? mesaId,
     String? comandaId,
-    BuildContext? context,
   }) async {
     debugPrint('📝 [PedidoProvider] iniciarNovoPedido chamado:');
     debugPrint('  - MesaId: $mesaId');
@@ -222,5 +202,6 @@ class PedidoProvider extends ChangeNotifier {
       return null;
     }
   }
+
 }
 
