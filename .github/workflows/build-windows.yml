@@ -175,44 +175,71 @@ jobs:
             Write-Host "✅ Plugin stone_payments removido do registro"
             Write-Host "   Arquivo modificado: $pluginFile"
             
-            # Recompila apenas o executável usando CMake (sem fazer flutter build novamente)
-            Write-Host "🔨 Recompilando executável com plugin removido..."
-            $cmakeBuildDir = "build\windows"
-            if (Test-Path "$cmakeBuildDir\CMakeCache.txt") {
-              cd $cmakeBuildDir
-              cmake --build . --config $buildType
-              cd ..\..
-              Write-Host "✅ Executável recompilado sem o plugin stone_payments"
+            # O arquivo foi modificado, agora precisa recompilar o executável
+            # Como o Flutter já compilou, vamos tentar recompilar apenas o executável
+            # usando o arquivo modificado, sem fazer flutter build novamente
+            Write-Host "✅ Arquivo modificado com sucesso"
+            Write-Host "   O plugin stone_payments foi removido do registro"
+            Write-Host ""
+            Write-Host "🔨 Tentando recompilar apenas o executável..."
+            
+            # O arquivo foi modificado, mas o executável já foi compilado com o plugin
+            # A melhor solução é fazer build novamente, mas protegendo o arquivo modificado
+            # para que ele não seja regenerado pelo Flutter
+            Write-Host "🔨 Recompilando com arquivo modificado..."
+            
+            # Protege o arquivo modificado antes de fazer build novamente
+            $protectedFile = "$pluginFile.protected"
+            Copy-Item $pluginFile $protectedFile -Force
+            Write-Host "   Arquivo protegido: $protectedFile"
+            
+            # Faz build novamente (o Flutter pode regenerar o arquivo durante o build)
+            $flavor = "$env:FLAVOR"
+            $buildMode = "$env:BUILD_MODE"
+            if ([string]::IsNullOrWhiteSpace($flavor) -or $flavor -eq '') {
+              $flavor = "mobile"
+            }
+            
+            Write-Host "   Executando build para recompilar com arquivo modificado..."
+            if ($buildMode -eq "release") {
+              flutter build windows --release --dart-define=FLAVOR=$flavor
             } else {
-              Write-Host "⚠️ CMakeCache.txt não encontrado, fazendo build completo novamente..."
-              # Se não conseguir recompilar com CMake, faz build completo novamente
-              # Mas primeiro protege o arquivo modificado
-              $protectedFile = "$pluginFile.protected"
-              Copy-Item $pluginFile $protectedFile
-              
-              $flavor = "$env:FLAVOR"
-              $buildMode = "$env:BUILD_MODE"
-              if ([string]::IsNullOrWhiteSpace($flavor) -or $flavor -eq '') {
-                $flavor = "mobile"
-              }
-              
-              if ($buildMode -eq "release") {
-                flutter build windows --release --dart-define=FLAVOR=$flavor
-              } else {
-                flutter build windows --debug --dart-define=FLAVOR=$flavor
-              }
-              
-              # Restaura o arquivo modificado
+              flutter build windows --debug --dart-define=FLAVOR=$flavor
+            }
+            
+            # Aguarda um pouco para garantir que o build terminou completamente
+            Start-Sleep -Seconds 2
+            
+            # Restaura o arquivo modificado imediatamente após o build
+            # (o Flutter pode ter regenerado durante o build)
+            if (Test-Path $protectedFile) {
               Copy-Item $protectedFile $pluginFile -Force
               Remove-Item $protectedFile
+              Write-Host "   ✅ Arquivo modificado restaurado após build"
               
-              # Recompila novamente
-              cd $cmakeBuildDir
-              cmake --build . --config $buildType
-              cd ..\..
-              
-              Write-Host "✅ Executável recompilado sem o plugin stone_payments"
+              # Verifica se o arquivo ainda tem o plugin e remove novamente se necessário
+              $contentCheck = Get-Content $pluginFile -Raw
+              if ($contentCheck -match 'stone_payments') {
+                Write-Host "   ⚠️ Arquivo foi regenerado, removendo plugin novamente..."
+                $contentCheck = $contentCheck -replace '#include <stone_payments/stone_payments_plugin\.h>', '// #include <stone_payments/stone_payments_plugin.h> // Removido: não suporta Windows'
+                $contentCheck = $contentCheck -replace 'stone_payments::StonePaymentsPluginRegisterWithRegistrar\([^)]*\);', '// stone_payments plugin removido (não suporta Windows)'
+                $contentCheck = $contentCheck -replace "(\r?\n\s*){3,}", "`r`n`r`n"
+                Set-Content -Path $pluginFile -Value $contentCheck -NoNewline
+                Write-Host "   ✅ Plugin removido novamente"
+                
+                # Recompila apenas o executável usando CMake se possível
+                $cmakeBuildDir = "build\windows"
+                if (Test-Path "$cmakeBuildDir\CMakeCache.txt") {
+                  Write-Host "   🔨 Recompilando executável final..."
+                  cd $cmakeBuildDir
+                  cmake --build . --config $buildType 2>&1 | Out-String
+                  cd ..\..
+                  Write-Host "   ✅ Executável recompilado"
+                }
+              }
             }
+            
+            Write-Host "✅ Build concluído com plugin stone_payments removido"
           }
         continue-on-error: true  # Não falha o build se o arquivo não for encontrado
 
