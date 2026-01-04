@@ -12,44 +12,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Fix package name in pubspec.yaml (CRITICAL - before any Flutter command)
-        run: |
-          # IMPORTANTE: O Flutter pode inferir o nome do pacote do diretório 'h4nd-pdv' (com hífen)
-          # antes de ler o pubspec.yaml. Precisamos garantir que o pubspec.yaml tenha o nome correto
-          # ANTES de qualquer comando do Flutter ser executado.
-          Write-Host "=========================================="
-          Write-Host "FIXING PACKAGE NAME IN pubspec.yaml"
-          Write-Host "Repository name: h4nd-pdv (invalid for Dart package)"
-          Write-Host "Correct package name: mx_cloud_pdv"
-          Write-Host "=========================================="
-          
-          # Ler o nome atual
-          $currentName = (Get-Content pubspec.yaml | Select-String '^name:\s*(.+)$').Matches.Groups[1].Value.Trim()
-          Write-Host "Current package name in pubspec.yaml: $currentName"
-          
-          # Sempre garantir que o nome está correto (mesmo que já esteja)
-          if ($currentName -ne 'mx_cloud_pdv') {
-            Write-Host "Fixing package name from '$currentName' to 'mx_cloud_pdv'"
-            (Get-Content pubspec.yaml) -replace '^name:\s*.+$', 'name: mx_cloud_pdv' | Set-Content pubspec.yaml
-          }
-          
-          # Verificar novamente
-          $verifyName = (Get-Content pubspec.yaml | Select-String '^name:\s*(.+)$').Matches.Groups[1].Value.Trim()
-          Write-Host "Verified package name: $verifyName"
-          
-          if ($verifyName -ne 'mx_cloud_pdv') {
-            Write-Host "ERROR: Failed to set correct package name!"
-            exit 1
-          }
-          
-          if ($verifyName -notmatch '^[a-z0-9_]+$') {
-            Write-Host "ERROR: Invalid package name format: $verifyName"
-            Write-Host "Package name must be lowercase with underscores only (e.g., mx_cloud_pdv)"
-            exit 1
-          }
-          
-          Write-Host "✓ Package name is correct: $verifyName"
-
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -62,16 +24,26 @@ jobs:
       - name: Check Windows support
         run: flutter config --enable-windows-desktop
 
+      - name: Verify pubspec.yaml package name
+        run: |
+          $packageName = (Get-Content pubspec.yaml | Select-String '^name:\s*(.+)$').Matches.Groups[1].Value.Trim()
+          Write-Host "Package name from pubspec.yaml: $packageName"
+          if ($packageName -notmatch '^[a-z0-9_]+$') {
+            Write-Host "ERROR: Invalid package name: $packageName"
+            Write-Host "Package name must be lowercase with underscores only (e.g., mx_cloud_pdv)"
+            exit 1
+          }
+
       - name: Create Windows platform
         run: |
-          # O pubspec.yaml já foi corrigido no passo anterior
-          # Verificar novamente por segurança
-          $packageName = (Get-Content pubspec.yaml | Select-String '^name:\s*(.+)$').Matches.Groups[1].Value.Trim()
-          Write-Host "Package name in pubspec.yaml: $packageName"
-          if ($packageName -ne 'mx_cloud_pdv') {
-            Write-Host "ERROR: Package name is incorrect! Expected 'mx_cloud_pdv', got: $packageName"
-            Write-Host "This should have been fixed in the previous step."
-            exit 1
+          # Garantir que o pubspec.yaml tem o nome correto ANTES de qualquer operação do Flutter
+          $currentName = (Get-Content pubspec.yaml | Select-String '^name:\s*(.+)$').Matches.Groups[1].Value.Trim()
+          Write-Host "Current package name in pubspec.yaml: $currentName"
+          if ($currentName -ne 'mx_cloud_pdv') {
+            Write-Host "Fixing package name from '$currentName' to 'mx_cloud_pdv'"
+            (Get-Content pubspec.yaml) -replace '^name:\s*.+$', 'name: mx_cloud_pdv' | Set-Content pubspec.yaml
+            $verifyName = (Get-Content pubspec.yaml | Select-String '^name:\s*(.+)$').Matches.Groups[1].Value.Trim()
+            Write-Host "Verified package name after fix: $verifyName"
           }
           
           # Verificar se a plataforma Windows já existe
@@ -79,11 +51,14 @@ jobs:
             Write-Host "Windows platform already exists, skipping flutter create"
           } else {
             Write-Host "Creating Windows platform..."
-            Write-Host "NOTE: Repository name is 'h4nd-pdv' (with hyphen), but package name is 'mx_cloud_pdv' (with underscore)"
-            Write-Host "The pubspec.yaml has been corrected to use the valid package name."
-            
-            # Fazer pub get primeiro para garantir que o Flutter leia o pubspec.yaml correto
+            # O Flutter pode estar validando o nome do pacote baseado no diretório
+            # Vamos usar uma abordagem que força o uso do pubspec.yaml
+            # Primeiro, vamos garantir que o pubspec.yaml está correto e fazer pub get
             flutter pub get
+            
+            Write-Host "NOTE: Flutter may validate package name based on directory name 'h4nd-pdv'"
+            Write-Host "This is a known issue when the repository name contains hyphens."
+            Write-Host "We'll attempt to create the platform, but if it fails, we'll use a workaround."
             
             # Tentar criar a plataforma Windows com tratamento de erro robusto
             $ErrorActionPreference = 'Continue'
