@@ -6,11 +6,30 @@ param(
     [string]$BuildType = "Release"
 )
 
-$pluginFile = "build\windows\flutter\generated_plugin_registrant.cc"
+# Verifica possíveis caminhos do arquivo
+$possiblePaths = @(
+    "build\windows\flutter\generated_plugin_registrant.cc",
+    "build\windows\x64\flutter\generated_plugin_registrant.cc",
+    "windows\flutter\generated_plugin_registrant.cc"
+)
 
-if (-not (Test-Path $pluginFile)) {
-    Write-Host "❌ Arquivo não encontrado: $pluginFile"
+$pluginFile = $null
+foreach ($path in $possiblePaths) {
+    if (Test-Path $path) {
+        $pluginFile = $path
+        Write-Host "✅ Arquivo encontrado em: $path"
+        break
+    }
+}
+
+if (-not $pluginFile) {
+    Write-Host "❌ Arquivo generated_plugin_registrant.cc não encontrado em nenhum dos caminhos:"
+    foreach ($path in $possiblePaths) {
+        Write-Host "   - $path"
+    }
+    Write-Host ""
     Write-Host "   Execute 'flutter build windows' primeiro"
+    Write-Host "   Ou verifique se o build foi concluído com sucesso"
     exit 1
 }
 

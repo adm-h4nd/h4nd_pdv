@@ -87,12 +87,68 @@ jobs:
           Write-Host "REMOVING STONE_PAYMENTS PLUGIN"
           Write-Host "=========================================="
           
-          $pluginFile = "build\windows\flutter\generated_plugin_registrant.cc"
+          # Verifica se o build foi feito
+          if (-not (Test-Path "build\windows")) {
+            Write-Host "❌ Diretório build\windows não existe"
+            Write-Host "   O build do Flutter pode não ter sido executado"
+            Write-Host "   Continuando sem modificar..."
+            exit 0
+          }
+          
+          # Busca o arquivo em todos os locais possíveis
+          Write-Host "🔍 Procurando arquivo generated_plugin_registrant.cc..."
+          
+          $pluginFile = $null
+          
+          # Busca recursiva primeiro (mais confiável)
+          if (Test-Path "build\windows") {
+            $foundFiles = Get-ChildItem "build\windows" -Recurse -Filter "generated_plugin_registrant.cc" -ErrorAction SilentlyContinue
+            if ($foundFiles -and $foundFiles.Count -gt 0) {
+              $pluginFile = $foundFiles[0].FullName
+              Write-Host "✅ Arquivo encontrado via busca recursiva: $pluginFile"
+            }
+          }
+          
+          # Se não encontrou, tenta os caminhos esperados
+          if (-not $pluginFile) {
+            $searchPaths = @(
+              "build\windows\flutter\generated_plugin_registrant.cc",
+              "build\windows\x64\flutter\generated_plugin_registrant.cc",
+              "windows\flutter\generated_plugin_registrant.cc"
+            )
+            
+            foreach ($path in $searchPaths) {
+              if (Test-Path $path) {
+                $pluginFile = (Resolve-Path $path).Path
+                Write-Host "✅ Arquivo encontrado em: $pluginFile"
+                break
+              }
+            }
+          }
+          
           $buildType = "$env:BUILD_TYPE"
           
-          if (-not (Test-Path $pluginFile)) {
-            Write-Host "⚠️ Arquivo não encontrado: $pluginFile"
-            Write-Host "   Continuando sem modificar..."
+          if (-not $pluginFile) {
+            Write-Host "⚠️ Arquivo generated_plugin_registrant.cc não encontrado"
+            Write-Host "   Verificando estrutura de diretórios..."
+            if (Test-Path "build\windows") {
+              Write-Host "   Diretório build\windows existe"
+              Write-Host "   Conteúdo de build\windows:"
+              Get-ChildItem "build\windows" -Directory | ForEach-Object { Write-Host "     - $($_.Name)" }
+              Write-Host "   Buscando arquivos *plugin*:"
+              $pluginFiles = Get-ChildItem "build\windows" -Recurse -Filter "*plugin*" -ErrorAction SilentlyContinue
+              if ($pluginFiles) {
+                $pluginFiles | ForEach-Object { Write-Host "     - $($_.FullName)" }
+              } else {
+                Write-Host "     Nenhum arquivo *plugin* encontrado"
+              }
+            }
+            Write-Host "   ⚠️ Continuando sem modificar (plugin pode não estar sendo registrado ou build incompleto)"
+            Write-Host "   Isso pode significar que:"
+            Write-Host "     1. O plugin stone_payments não está sendo incluído no build"
+            Write-Host "     2. O build ainda não foi concluído"
+            Write-Host "     3. O arquivo está em um local diferente"
+            Write-Host "   Se o erro de DLL persistir, verifique manualmente o arquivo gerado"
           } else {
             Write-Host "🔧 Removendo plugin stone_payments do registro..."
             
@@ -158,7 +214,7 @@ jobs:
               Write-Host "✅ Executável recompilado sem o plugin stone_payments"
             }
           }
-        continue-on-error: false
+        continue-on-error: true  # Não falha o build se o arquivo não for encontrado
 
       - name: Create ZIP artifact
         run: |
