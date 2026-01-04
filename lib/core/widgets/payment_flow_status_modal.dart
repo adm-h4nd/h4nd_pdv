@@ -136,18 +136,18 @@ class PaymentFlowStatusModal {
           mainAxisSize: MainAxisSize.min,
           children: [
             // Ícone estático
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
-                shape: BoxShape.circle,
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  icon,
+                  size: 32,
+                  color: color,
+                ),
               ),
-              child: Icon(
-                icon,
-                size: 32,
-                color: color,
-              ),
-            ),
             
             const SizedBox(height: 24),
             

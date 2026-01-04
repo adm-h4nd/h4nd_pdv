@@ -24,7 +24,16 @@ bool FlutterWindow::OnCreate() {
   if (!flutter_controller_->engine() || !flutter_controller_->view()) {
     return false;
   }
-  RegisterPlugins(flutter_controller_->engine());
+  
+  // Registra plugins com tratamento de erro
+  // Alguns plugins podem não ter suporte Windows (ex: stone_payments)
+  try {
+    RegisterPlugins(flutter_controller_->engine());
+  } catch (...) {
+    // Ignora erros ao registrar plugins que não têm suporte Windows
+    // O app continuará funcionando sem esses plugins
+  }
+  
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {

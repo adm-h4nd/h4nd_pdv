@@ -588,11 +588,11 @@ class _PagamentoRestauranteScreenState extends State<PagamentoRestauranteScreen>
     debugPrint('🏁 Venda original: ${widget.venda.id}');
     debugPrint('🏁 Venda atualizada: ${_vendaAtualizada?.id}');
     
-    final success = await paymentFlowProvider.concludeSale(
-      concluirVendaCallback: (vendaId) => _vendaService.concluirVenda(vendaId),
-      getVendaCallback: (vendaId) => _vendaService.getVendaById(vendaId), // ✅ Adiciona callback para buscar venda
+      final success = await paymentFlowProvider.concludeSale(
+        concluirVendaCallback: (vendaId) => _vendaService.concluirVenda(vendaId),
+        getVendaCallback: (vendaId) => _vendaService.getVendaById(vendaId), // ✅ Adiciona callback para buscar venda
       vendaId: vendaIdParaConcluir, // ✅ Usa venda atualizada (agrupada) se disponível
-    );
+      );
     
     if (!success) {
       // Se falhou, mostra erro

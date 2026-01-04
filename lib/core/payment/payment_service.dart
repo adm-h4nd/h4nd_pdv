@@ -27,7 +27,14 @@ class PaymentService {
     debugPrint('📱 Providers disponíveis: ${_config!.availableProviders}');
     
     // Registra providers baseado na configuração
-    await PaymentProviderRegistry.registerAll(_config!);
+    // No Windows, alguns providers podem não estar disponíveis
+    try {
+      await PaymentProviderRegistry.registerAll(_config!);
+    } catch (e, stackTrace) {
+      debugPrint('⚠️ Erro ao registrar payment providers: $e');
+      debugPrint('📚 Stack trace: $stackTrace');
+      // Continua mesmo se houver erro (alguns providers podem não estar disponíveis no Windows)
+    }
   }
   
   /// Retorna métodos de pagamento disponíveis para este dispositivo
