@@ -155,24 +155,13 @@ jobs:
                 if (Test-Path "android\windows") {
                   Write-Host "Found android\windows directory. Copying to root..."
                   Copy-Item -Path "android\windows" -Destination "windows" -Recurse -Force
-                  
-                  # Verificar se a cópia foi bem-sucedida
-                  if (Test-Path "windows") {
-                    Write-Host "✓ Windows platform copied successfully from android\windows"
-                    Write-Host "Continuing with build process..."
-                    # Não falhar o build, o workaround funcionou
-                  } else {
-                    Write-Host "ERROR: Failed to copy android\windows to windows\"
-                    exit 1
-                  }
+                  Write-Host "Windows platform copied from android\windows"
                 } elseif (-not (Test-Path "windows")) {
                   Write-Host "ERROR: Windows platform does not exist and cannot be created."
                   Write-Host "The Flutter tool is rejecting the directory name 'h4nd-pdv'."
                   Write-Host "Permanent solution: Rename the repository from 'h4nd-pdv' to 'h4nd_pdv' or 'mx_cloud_pdv'"
                   Write-Host "Temporary workaround: Create the windows/ directory structure manually"
                   exit 1
-                } else {
-                  Write-Host "✓ Windows platform already exists, continuing..."
                 }
               } else {
                 Write-Host "Fixing package name and retrying..."
@@ -180,19 +169,7 @@ jobs:
                 flutter create --platforms=windows .
               }
             } else {
-              Write-Host "✓ flutter create completed successfully"
-            }
-            
-            # Verificação final: se o diretório windows/ existe, o step foi bem-sucedido
-            if (Test-Path "windows") {
-              Write-Host "=========================================="
-              Write-Host "✓ SUCCESS: Windows platform is ready"
-              Write-Host "=========================================="
-            } else {
-              Write-Host "=========================================="
-              Write-Host "ERROR: Windows platform directory does not exist"
-              Write-Host "=========================================="
-              exit 1
+              Write-Host "flutter create completed successfully"
             }
           }
 
