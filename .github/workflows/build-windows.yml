@@ -77,52 +77,52 @@ jobs:
           $stoneAdapterPath = "lib/data/adapters/payment/providers/stone_pos_adapter.dart"
           if (Test-Path $stoneAdapterPath) {
             Copy-Item $stoneAdapterPath "$stoneAdapterPath.bak"
-            $stubContent = @"
-// STUB: Este arquivo substitui stone_pos_adapter.dart quando stone_payments não está disponível (Windows)
-import '../../../../core/payment/payment_provider.dart';
-import '../../../../core/payment/payment_ui_notifier.dart';
-import 'package:flutter/foundation.dart';
-
-/// Stub do Stone POS Adapter (não disponível no Windows)
-class StonePOSAdapter implements PaymentProvider {
-  final Map<String, dynamic>? _settings;
-  
-  StonePOSAdapter({Map<String, dynamic>? settings}) : _settings = settings;
-  
-  @override
-  String get providerName => 'Stone';
-  
-  @override
-  PaymentType get paymentType => PaymentType.pos;
-  
-  @override
-  bool get isAvailable => false;
-  
-  @override
-  bool get requiresUserInteraction => true;
-  
-  @override
-  Future<void> initialize() async {
-    throw UnimplementedError('Stone POS Adapter não disponível no Windows');
-  }
-  
-  @override
-  Future<PaymentResult> processPayment({
-    required double amount,
-    required String vendaId,
-    Map<String, dynamic>? additionalData,
-    PaymentUINotifier? uiNotifier,
-  }) async {
-    throw UnimplementedError('Stone POS Adapter não disponível no Windows');
-  }
-  
-  @override
-  Future<void> disconnect() async {
-    // Nada a fazer
-  }
-}
-"@
-            Set-Content -Path $stoneAdapterPath -Value $stubContent -NoNewline
+            $stubLines = @(
+              "// STUB: Este arquivo substitui stone_pos_adapter.dart quando stone_payments não está disponível (Windows)",
+              "import '../../../../core/payment/payment_provider.dart';",
+              "import '../../../../core/payment/payment_ui_notifier.dart';",
+              "import 'package:flutter/foundation.dart';",
+              "",
+              "/// Stub do Stone POS Adapter (não disponível no Windows)",
+              "class StonePOSAdapter implements PaymentProvider {",
+              "  final Map<String, dynamic>? _settings;",
+              "  ",
+              "  StonePOSAdapter({Map<String, dynamic>? settings}) : _settings = settings;",
+              "  ",
+              "  @override",
+              "  String get providerName => 'Stone';",
+              "  ",
+              "  @override",
+              "  PaymentType get paymentType => PaymentType.pos;",
+              "  ",
+              "  @override",
+              "  bool get isAvailable => false;",
+              "  ",
+              "  @override",
+              "  bool get requiresUserInteraction => true;",
+              "  ",
+              "  @override",
+              "  Future<void> initialize() async {",
+              "    throw UnimplementedError('Stone POS Adapter não disponível no Windows');",
+              "  }",
+              "  ",
+              "  @override",
+              "  Future<PaymentResult> processPayment({",
+              "    required double amount,",
+              "    required String vendaId,",
+              "    Map<String, dynamic>? additionalData,",
+              "    PaymentUINotifier? uiNotifier,",
+              "  }) async {",
+              "    throw UnimplementedError('Stone POS Adapter não disponível no Windows');",
+              "  }",
+              "  ",
+              "  @override",
+              "  Future<void> disconnect() async {",
+              "    // Nada a fazer",
+              "  }",
+              "}"
+            )
+            Set-Content -Path $stoneAdapterPath -Value ($stubLines -join "`r`n")
             Write-Host "   ✅ Stub criado: $stoneAdapterPath"
           }
           
