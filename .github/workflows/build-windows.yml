@@ -74,6 +74,8 @@ jobs:
           # Cria stubs dos arquivos que importam stone_payments
           Write-Host ""
           Write-Host "   Criando stubs dos arquivos que importam stone_payments..."
+          
+          # Stub para stone_pos_adapter.dart
           $stoneAdapterPath = "lib/data/adapters/payment/providers/stone_pos_adapter.dart"
           if (Test-Path $stoneAdapterPath) {
             Copy-Item $stoneAdapterPath "$stoneAdapterPath.bak"
@@ -124,6 +126,103 @@ jobs:
             )
             Set-Content -Path $stoneAdapterPath -Value ($stubLines -join "`r`n")
             Write-Host "   ✅ Stub criado: $stoneAdapterPath"
+          }
+          
+          # Stub para stone_thermal_adapter.dart
+          $stoneThermalPath = "lib/data/adapters/printing/providers/stone_thermal_adapter.dart"
+          if (Test-Path $stoneThermalPath) {
+            Copy-Item $stoneThermalPath "$stoneThermalPath.bak"
+            $stubLines = @(
+              "// STUB: Este arquivo substitui stone_thermal_adapter.dart quando stone_payments não está disponível (Windows)",
+              "import '../../../../core/printing/print_provider.dart';",
+              "import '../../../../core/printing/print_data.dart';",
+              "import '../../../../core/printing/nfce_print_data.dart';",
+              "import 'package:flutter/foundation.dart';",
+              "",
+              "/// Stub do Stone Thermal Adapter (não disponível no Windows)",
+              "class StoneThermalAdapter implements PrintProvider {",
+              "  final Map<String, dynamic>? _settings;",
+              "  bool _initialized = false;",
+              "  ",
+              "  StoneThermalAdapter({Map<String, dynamic>? settings}) : _settings = settings;",
+              "  ",
+              "  @override",
+              "  String get providerName => 'Stone Thermal';",
+              "  ",
+              "  @override",
+              "  PrintType get printType => PrintType.thermal;",
+              "  ",
+              "  @override",
+              "  bool get isAvailable => false;",
+              "  ",
+              "  @override",
+              "  Future<void> initialize() async {",
+              "    throw UnimplementedError('Stone Thermal Adapter não disponível no Windows');",
+              "  }",
+              "  ",
+              "  @override",
+              "  Future<PrintResult> printComanda(PrintData data) async {",
+              "    throw UnimplementedError('Stone Thermal Adapter não disponível no Windows');",
+              "  }",
+              "  ",
+              "  @override",
+              "  Future<PrintResult> printNfce(NfcePrintData data) async {",
+              "    throw UnimplementedError('Stone Thermal Adapter não disponível no Windows');",
+              "  }",
+              "  ",
+              "  @override",
+              "  Future<bool> checkPrinterStatus() async {",
+              "    throw UnimplementedError('Stone Thermal Adapter não disponível no Windows');",
+              "  }",
+              "  ",
+              "  @override",
+              "  Future<void> disconnect() async {",
+              "    // Nada a fazer",
+              "  }",
+              "}"
+            )
+            Set-Content -Path $stoneThermalPath -Value ($stubLines -join "`r`n")
+            Write-Host "   ✅ Stub criado: $stoneThermalPath"
+          }
+          
+          # Stub para stone_thermal_adapter_loader.dart
+          $stoneThermalLoaderPath = "lib/data/adapters/printing/providers/stone_thermal_adapter_loader.dart"
+          if (Test-Path $stoneThermalLoaderPath) {
+            Copy-Item $stoneThermalLoaderPath "$stoneThermalLoaderPath.bak"
+            $stubLines = @(
+              "// STUB: Este arquivo substitui stone_thermal_adapter_loader.dart quando stone_payments não está disponível (Windows)",
+              "import '../../../../core/printing/print_provider.dart';",
+              "import 'stone_thermal_adapter.dart';",
+              "",
+              "/// Stub do loader do Stone Thermal Adapter (não disponível no Windows)",
+              "PrintProvider Function(Map<String, dynamic>?) createStoneThermalAdapterLoader() {",
+              "  return (settings) {",
+              "    return StoneThermalAdapter(settings: settings);",
+              "  };",
+              "}"
+            )
+            Set-Content -Path $stoneThermalLoaderPath -Value ($stubLines -join "`r`n")
+            Write-Host "   ✅ Stub criado: $stoneThermalLoaderPath"
+          }
+          
+          # Stub para stone_transaction_mapper.dart
+          $stoneMapperPath = "lib/data/adapters/payment/providers/mappers/stone_transaction_mapper.dart"
+          if (Test-Path $stoneMapperPath) {
+            Copy-Item $stoneMapperPath "$stoneMapperPath.bak"
+            $stubLines = @(
+              "// STUB: Este arquivo substitui stone_transaction_mapper.dart quando stone_payments não está disponível (Windows)",
+              "import '../../../../../core/payment/payment_transaction_data.dart';",
+              "",
+              "/// Stub do mapper de transações Stone (não disponível no Windows)",
+              "class StoneTransactionMapper {",
+              "  /// Stub - lança erro pois Stone SDK não está disponível no Windows",
+              "  static PaymentTransactionData fromStoneTransaction(dynamic transaction) {",
+              "    throw UnimplementedError('Stone Transaction Mapper não disponível no Windows');",
+              "  }",
+              "}"
+            )
+            Set-Content -Path $stoneMapperPath -Value ($stubLines -join "`r`n")
+            Write-Host "   ✅ Stub criado: $stoneMapperPath"
           }
           
           Write-Host ""
@@ -179,17 +278,25 @@ jobs:
             Write-Host "✅ stone_payments não encontrado no pubspec.yaml"
           }
           
-          # Verifica se o stub foi criado
-          $stubPath = "lib/data/adapters/payment/providers/stone_pos_adapter.dart"
-          if (Test-Path $stubPath) {
-            $stubContent = Get-Content $stubPath -Raw
-            if ($stubContent -match 'STUB') {
-              Write-Host "✅ Stub do stone_pos_adapter.dart criado corretamente"
+          # Verifica se os stubs foram criados
+          $stubPaths = @(
+            "lib/data/adapters/payment/providers/stone_pos_adapter.dart",
+            "lib/data/adapters/printing/providers/stone_thermal_adapter.dart",
+            "lib/data/adapters/printing/providers/stone_thermal_adapter_loader.dart",
+            "lib/data/adapters/payment/providers/mappers/stone_transaction_mapper.dart"
+          )
+          
+          foreach ($stubPath in $stubPaths) {
+            if (Test-Path $stubPath) {
+              $stubContent = Get-Content $stubPath -Raw
+              if ($stubContent -match 'STUB') {
+                Write-Host "✅ Stub criado corretamente: $stubPath"
+              } else {
+                Write-Host "⚠️ $stubPath existe mas não parece ser um stub"
+              }
             } else {
-              Write-Host "⚠️ stone_pos_adapter.dart existe mas não parece ser um stub"
+              Write-Host "⚠️ $stubPath não encontrado"
             }
-          } else {
-            Write-Host "⚠️ stone_pos_adapter.dart não encontrado"
           }
           
           Write-Host ""
