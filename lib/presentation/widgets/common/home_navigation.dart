@@ -9,6 +9,7 @@ import '../../../screens/comandas/comandas_screen.dart';
 import '../../../screens/pedidos/pedidos_screen.dart';
 import '../../../screens/balcao/balcao_screen.dart';
 import '../../../screens/patio/patio_screen.dart';
+import '../../../presentation/widgets/common/h4nd_logo.dart';
 
 /// Widget principal de navegação com bottom navigation bar
 class HomeNavigation extends StatefulWidget {
@@ -238,6 +239,30 @@ class _HomeNavigationState extends State<HomeNavigation> {
     return colorMap[item.label] ?? Theme.of(context).colorScheme.primary;
   }
 
+  /// Constrói a barra superior com logo H4ND
+  Widget _buildTopLogoBar() {
+    return Container(
+      height: 40,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+            spreadRadius: 0,
+          ),
+        ],
+      ),
+      child: Center(
+        child: H4NDLogo(
+          fontSize: 24,
+          showPdv: false, // Apenas H4ND, sem texto inferior
+        ),
+      ),
+    );
+  }
+
   /// Constrói o conteúdo da barra de navegação inferior
   Widget _buildBottomNavigationContent(
     BuildContext context,
@@ -369,21 +394,30 @@ class _HomeNavigationState extends State<HomeNavigation> {
           body: SafeArea(
             top: true,
             bottom: false, // Bottom navigation bar já tem seu próprio espaço
-            child: IndexedStack(
-              index: _currentIndex,
-              children: navigationItems.asMap().entries.map((entry) {
-                final index = entry.key;
-                final item = entry.value;
-                // Passa o notifier para BalcaoScreen se for a tela balcão
-                if (item.screen is BalcaoScreen) {
-                  return BalcaoScreen(
-                    hideAppBar: (item.screen as BalcaoScreen).hideAppBar,
-                    navigationIndexNotifier: _navigationIndexNotifier,
-                    screenIndex: index,
-                  );
-                }
-                return item.screen;
-              }).toList(),
+            child: Column(
+              children: [
+                // Barra superior com logo H4ND
+                _buildTopLogoBar(),
+                // Conteúdo das telas
+                Expanded(
+                  child: IndexedStack(
+                    index: _currentIndex,
+                    children: navigationItems.asMap().entries.map((entry) {
+                      final index = entry.key;
+                      final item = entry.value;
+                      // Passa o notifier para BalcaoScreen se for a tela balcão
+                      if (item.screen is BalcaoScreen) {
+                        return BalcaoScreen(
+                          hideAppBar: (item.screen as BalcaoScreen).hideAppBar,
+                          navigationIndexNotifier: _navigationIndexNotifier,
+                          screenIndex: index,
+                        );
+                      }
+                      return item.screen;
+                    }).toList(),
+                  ),
+                ),
+              ],
             ),
           ),
           bottomNavigationBar: Container(
