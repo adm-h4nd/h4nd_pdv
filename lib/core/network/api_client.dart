@@ -27,10 +27,12 @@ class ApiClient {
     );
 
     // Adiciona interceptors
+    // IMPORTANTE: A ordem importa! O AuthInterceptor deve ser o ÚLTIMO para interceptar erros 401/403 ANTES do ErrorInterceptor
+    // No Dio, os interceptors são executados na ordem inversa para onError (o último adicionado é o primeiro a receber)
     _dio.interceptors.addAll([
-      authInterceptor,
-      ErrorInterceptor(),
       if (!config.isProduction) LoggingInterceptor(),
+      ErrorInterceptor(),
+      authInterceptor, // Deve ser o último para interceptar 401/403 antes do ErrorInterceptor
     ]);
   }
 

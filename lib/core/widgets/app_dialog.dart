@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
+import '../../main.dart';
 
 /// Tipos de diálogo disponíveis
 enum AppDialogType {
@@ -88,14 +89,20 @@ class AppDialog {
 
   /// Mostra um diálogo de erro
   static Future<void> showError({
-    required BuildContext context,
+    BuildContext? context,
     required String title,
     String? message,
     String? buttonText,
     VoidCallback? onDismiss,
   }) {
+    final ctx = context ?? navigatorKey.currentContext;
+    if (ctx == null) {
+      debugPrint('AppDialog: Não foi possível mostrar dialog - context não disponível');
+      return Future.value();
+    }
+    
     return showDialog(
-      context: context,
+      context: ctx,
       barrierDismissible: true,
       builder: (context) => _AppDialogWidget(
         type: AppDialogType.error,
@@ -106,6 +113,30 @@ class AppDialog {
         iconColor: Colors.red,
         onDismiss: onDismiss,
       ),
+    );
+  }
+  
+  /// Mostra um diálogo de alerta (pode ser usado sem context, usando navigatorKey global)
+  static Future<bool?> showAlertGlobal({
+    required String title,
+    required String message,
+    String? buttonText,
+    IconData? icon,
+    Color? iconColor,
+  }) {
+    final ctx = navigatorKey.currentContext;
+    if (ctx == null) {
+      debugPrint('AppDialog: Não foi possível mostrar dialog - context não disponível');
+      return Future.value(false);
+    }
+    
+    return showAlert(
+      context: ctx,
+      title: title,
+      message: message,
+      buttonText: buttonText,
+      icon: icon,
+      iconColor: iconColor,
     );
   }
 

@@ -4,6 +4,15 @@ import 'package:dio/dio.dart';
 class ErrorInterceptor extends Interceptor {
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
+    // Não processa 401 e 403 aqui - deixar o AuthInterceptor tratar primeiro
+    // Se o AuthInterceptor não resolver, o erro continuará sendo processado
+    final statusCode = err.response?.statusCode;
+    if (statusCode == 401 || statusCode == 403) {
+      // Deixa o AuthInterceptor tratar primeiro
+      handler.next(err);
+      return;
+    }
+    
     // Converte erros HTTP em exceções mais amigáveis
     DioException error = err;
 
@@ -18,19 +27,12 @@ class ErrorInterceptor extends Interceptor {
         );
         break;
       case DioExceptionType.badResponse:
-        final statusCode = err.response?.statusCode;
         String message = 'Erro desconhecido';
         
         if (statusCode != null) {
           switch (statusCode) {
             case 400:
               message = 'Requisição inválida';
-              break;
-            case 401:
-              message = 'Não autorizado';
-              break;
-            case 403:
-              message = 'Acesso negado';
               break;
             case 404:
               message = 'Recurso não encontrado';
