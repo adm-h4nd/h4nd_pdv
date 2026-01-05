@@ -27,15 +27,49 @@ jobs:
     name: Build Windows App
     runs-on: windows-latest
     env:
-      # CRÍTICO: Windows sempre usa flavor "mobile" porque não suporta SDK Stone
-      # Mesmo que o input seja "stoneP2", forçamos "mobile" para evitar problemas de DLL
-      FLAVOR: 'mobile'
-      BUILD_MODE: ${{ github.ref == 'refs/heads/main' && 'release' || 'debug' }}
-      BUILD_TYPE: ${{ github.ref == 'refs/heads/main' && 'Release' || 'Debug' }}
+      FLAVOR: ${{ github.event.inputs.flavor || 'mobile' }}
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Fix package name in pubspec.yaml (CRITICAL - before any Flutter command)
+        run: |
+          # IMPORTANTE: O Flutter pode inferir o nome do pacote do diretório 'h4nd-pdv' (com hífen)
+          # antes de ler o pubspec.yaml. Precisamos garantir que o pubspec.yaml tenha o nome correto
+          # ANTES de qualquer comando do Flutter ser executado.
+          Write-Host "=========================================="
+          Write-Host "FIXING PACKAGE NAME IN pubspec.yaml"
+          Write-Host "Repository name: h4nd-pdv (invalid for Dart package)"
+          Write-Host "Correct package name: mx_cloud_pdv"
+          Write-Host "=========================================="
+          
+          # Ler o nome atual
+          $currentName = (Get-Content pubspec.yaml | Select-String '^name:\s*(.+)$').Matches.Groups[1].Value.Trim()
+          Write-Host "Current package name in pubspec.yaml: $currentName"
+          
+          # Sempre garantir que o nome está correto (mesmo que já esteja)
+          if ($currentName -ne 'mx_cloud_pdv') {
+            Write-Host "Fixing package name from '$currentName' to 'mx_cloud_pdv'"
+            (Get-Content pubspec.yaml) -replace '^name:\s*.+$', 'name: mx_cloud_pdv' | Set-Content pubspec.yaml
+          }
+          
+          # Verificar novamente
+          $verifyName = (Get-Content pubspec.yaml | Select-String '^name:\s*(.+)$').Matches.Groups[1].Value.Trim()
+          Write-Host "Verified package name: $verifyName"
+          
+          if ($verifyName -ne 'mx_cloud_pdv') {
+            Write-Host "ERROR: Failed to set correct package name!"
+            exit 1
+          }
+          
+          if ($verifyName -notmatch '^[a-z0-9_]+$') {
+            Write-Host "ERROR: Invalid package name format: $verifyName"
+            Write-Host "Package name must be lowercase with underscores only (e.g., mx_cloud_pdv)"
+            exit 1
+          }
+          
+          Write-Host "✓ Package name is correct: $verifyName"
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -48,484 +82,177 @@ jobs:
         run: flutter config --enable-windows-desktop
 
       - name: Create Windows platform files (if needed)
-        run: flutter create --platforms=windows .
-
-      - name: Prepare Windows build (remove stone_payments)
         run: |
-          Write-Host "=========================================="
-          Write-Host "PREPARING WINDOWS BUILD"
-          Write-Host "REMOVING STONE_PAYMENTS PACKAGE"
-          Write-Host "=========================================="
-          Write-Host "   O pacote stone_payments não tem suporte Windows"
-          Write-Host "   Removendo do pubspec.yaml e criando stubs"
-          Write-Host "   O pacote NÃO será incluído no executável Windows"
-          Write-Host ""
-          Write-Host "   IMPORTANTE: Windows sempre usa flavor 'mobile'"
-          Write-Host "   Mesmo que o input seja 'stoneP2', forçamos 'mobile'"
-          Write-Host "   Isso evita que o Flutter registre o plugin"
-          Write-Host "   no generated_plugin_registrant.cc, prevenindo erro de DLL"
-          
-          # Força flavor para mobile no Windows (não suporta SDK Stone)
-          $env:FLAVOR = "mobile"
-          Write-Host ""
-          Write-Host "✅ Flavor forçado para 'mobile' no Windows"
-          Write-Host ""
-          
-          # Remove stone_payments do pubspec.yaml
-          Copy-Item pubspec.yaml pubspec.yaml.bak
-          Write-Host "   Backup criado: pubspec.yaml.bak"
-          
-          $content = Get-Content pubspec.yaml -Raw
-          $content = $content -replace '\s*stone_payments:\s*[^\r\n]+[\r\n]*', ''
-          $content = $content -replace '# Payment SDKs \(condicionais por flavor\)[\r\n]*', ''
-          $content = $content -replace '# stone_payments: necessário para compilar código Dart[\r\n]*', ''
-          $content = $content -replace '# As dependências nativas serão excluídas no build\.gradle\.kts para o flavor mobile[\r\n]*', ''
-          $content = $content -replace "(\r?\n\s*){4,}", "`r`n`r`n`r`n"
-          Set-Content -Path pubspec.yaml -Value $content -NoNewline
-          Write-Host "✅ stone_payments removido do pubspec.yaml"
-          
-          # Cria stubs dos arquivos que importam stone_payments
-          Write-Host ""
-          Write-Host "   Criando stubs dos arquivos que importam stone_payments..."
-          
-          # Stub para stone_pos_adapter.dart
-          $stoneAdapterPath = "lib/data/adapters/payment/providers/stone_pos_adapter.dart"
-          if (Test-Path $stoneAdapterPath) {
-            Copy-Item $stoneAdapterPath "$stoneAdapterPath.bak"
-            $stubLines = @(
-              "// STUB: Este arquivo substitui stone_pos_adapter.dart quando stone_payments não está disponível (Windows)",
-              "import '../../../../core/payment/payment_provider.dart';",
-              "import '../../../../core/payment/payment_ui_notifier.dart';",
-              "import 'package:flutter/foundation.dart';",
-              "",
-              "/// Stub do Stone POS Adapter (não disponível no Windows)",
-              "class StonePOSAdapter implements PaymentProvider {",
-              "  final Map<String, dynamic>? _settings;",
-              "  ",
-              "  StonePOSAdapter({Map<String, dynamic>? settings}) : _settings = settings;",
-              "  ",
-              "  @override",
-              "  String get providerName => 'Stone';",
-              "  ",
-              "  @override",
-              "  PaymentType get paymentType => PaymentType.pos;",
-              "  ",
-              "  @override",
-              "  bool get isAvailable => false;",
-              "  ",
-              "  @override",
-              "  bool get requiresUserInteraction => true;",
-              "  ",
-              "  @override",
-              "  Future<void> initialize() async {",
-              "    throw UnimplementedError('Stone POS Adapter não disponível no Windows');",
-              "  }",
-              "  ",
-              "  @override",
-              "  Future<PaymentResult> processPayment({",
-              "    required double amount,",
-              "    required String vendaId,",
-              "    Map<String, dynamic>? additionalData,",
-              "    PaymentUINotifier? uiNotifier,",
-              "  }) async {",
-              "    throw UnimplementedError('Stone POS Adapter não disponível no Windows');",
-              "  }",
-              "  ",
-              "  @override",
-              "  Future<void> disconnect() async {",
-              "    // Nada a fazer",
-              "  }",
-              "}"
-            )
-            Set-Content -Path $stoneAdapterPath -Value ($stubLines -join "`r`n")
-            Write-Host "   ✅ Stub criado: $stoneAdapterPath"
+          # O pubspec.yaml já foi corrigido no passo anterior
+          # Verificar novamente por segurança
+          $packageName = (Get-Content pubspec.yaml | Select-String '^name:\s*(.+)$').Matches.Groups[1].Value.Trim()
+          Write-Host "Package name in pubspec.yaml: $packageName"
+          if ($packageName -ne 'mx_cloud_pdv') {
+            Write-Host "ERROR: Package name is incorrect! Expected 'mx_cloud_pdv', got: $packageName"
+            Write-Host "This should have been fixed in the previous step."
+            exit 1
           }
           
-          # Stub para stone_thermal_adapter.dart
-          $stoneThermalPath = "lib/data/adapters/printing/providers/stone_thermal_adapter.dart"
-          if (Test-Path $stoneThermalPath) {
-            Copy-Item $stoneThermalPath "$stoneThermalPath.bak"
-            $stubLines = @(
-              "// STUB: Este arquivo substitui stone_thermal_adapter.dart quando stone_payments não está disponível (Windows)",
-              "import '../../../../core/printing/print_provider.dart';",
-              "import '../../../../core/printing/print_data.dart';",
-              "import '../../../../core/printing/nfce_print_data.dart';",
-              "import 'package:flutter/foundation.dart';",
-              "",
-              "/// Stub do Stone Thermal Adapter (não disponível no Windows)",
-              "class StoneThermalAdapter implements PrintProvider {",
-              "  final Map<String, dynamic>? _settings;",
-              "  bool _initialized = false;",
-              "  ",
-              "  StoneThermalAdapter({Map<String, dynamic>? settings}) : _settings = settings;",
-              "  ",
-              "  @override",
-              "  String get providerName => 'Stone Thermal';",
-              "  ",
-              "  @override",
-              "  PrintType get printType => PrintType.thermal;",
-              "  ",
-              "  @override",
-              "  bool get isAvailable => false;",
-              "  ",
-              "  @override",
-              "  Future<void> initialize() async {",
-              "    throw UnimplementedError('Stone Thermal Adapter não disponível no Windows');",
-              "  }",
-              "  ",
-              "  @override",
-              "  Future<PrintResult> printComanda(PrintData data) async {",
-              "    throw UnimplementedError('Stone Thermal Adapter não disponível no Windows');",
-              "  }",
-              "  ",
-              "  @override",
-              "  Future<PrintResult> printNfce(NfcePrintData data) async {",
-              "    throw UnimplementedError('Stone Thermal Adapter não disponível no Windows');",
-              "  }",
-              "  ",
-              "  @override",
-              "  Future<bool> checkPrinterStatus() async {",
-              "    throw UnimplementedError('Stone Thermal Adapter não disponível no Windows');",
-              "  }",
-              "  ",
-              "  @override",
-              "  Future<void> disconnect() async {",
-              "    // Nada a fazer",
-              "  }",
-              "}"
-            )
-            Set-Content -Path $stoneThermalPath -Value ($stubLines -join "`r`n")
-            Write-Host "   ✅ Stub criado: $stoneThermalPath"
+          # Verificar se a plataforma Windows já existe na raiz (não em android/)
+          if (Test-Path "windows") {
+            Write-Host "Windows platform already exists in root, skipping flutter create"
+          } else {
+            Write-Host "Creating Windows platform..."
+            Write-Host "NOTE: Flutter may validate package name based on directory name 'h4nd-pdv'"
+            Write-Host "This is a known issue when the repository name contains hyphens."
+            Write-Host "We'll attempt to create the platform, but if it fails, we'll use a workaround."
+            
+            # O Flutter pode estar validando o nome do pacote baseado no diretório
+            # Vamos garantir que o pubspec.yaml está correto e fazer pub get primeiro
+            flutter pub get
+            
+            # Tentar criar a plataforma Windows com tratamento de erro robusto
+            $ErrorActionPreference = 'Continue'
+            $createOutput = @()
+            $createExitCode = 0
+            
+            try {
+              flutter create --platforms=windows . 2>&1 | ForEach-Object {
+                $createOutput += $_
+                Write-Host $_
+              }
+              $createExitCode = $LASTEXITCODE
+            } catch {
+              $createOutput += $_.Exception.Message
+              Write-Host "Exception caught: $($_.Exception.Message)"
+              $createExitCode = 1
+            }
+            
+            # Verificar se houve erro relacionado ao nome do pacote
+            $hasPackageNameError = $false
+            $createOutput | ForEach-Object {
+              if ($_ -match "is not a valid Dart package name" -or $_ -match "h4nd-pdv") {
+                $hasPackageNameError = $true
+                Write-Host "ERROR DETECTED: $_"
+              }
+            }
+            
+            if ($hasPackageNameError -or $createExitCode -ne 0) {
+              Write-Host "=========================================="
+              Write-Host "ERROR: flutter create failed"
+              Write-Host "=========================================="
+              Write-Host "Full output:"
+              $createOutput | ForEach-Object { Write-Host $_ }
+              
+              # Verificar se o problema é realmente o nome do pacote
+              $nameCheck = (Get-Content pubspec.yaml | Select-String '^name:\s*(.+)$').Matches.Groups[1].Value.Trim()
+              Write-Host "Package name in pubspec.yaml: $nameCheck"
+              
+              if ($nameCheck -eq 'mx_cloud_pdv') {
+                Write-Host "=========================================="
+                Write-Host "WORKAROUND: Flutter is using directory name 'h4nd-pdv' instead of package name"
+                Write-Host "Solution: Skip flutter create and use existing windows/ directory if available"
+                Write-Host "=========================================="
+                
+                # Verificar se há um diretório windows em android/ que podemos copiar
+                if (Test-Path "android\windows") {
+                  Write-Host "Found android\windows directory. Copying to root..."
+                  Copy-Item -Path "android\windows" -Destination "windows" -Recurse -Force
+                  
+                  # Verificar se a cópia foi bem-sucedida
+                  if (Test-Path "windows") {
+                    Write-Host "✓ Windows platform copied successfully from android\windows"
+                    Write-Host "Continuing with build process..."
+                    # Não falhar o build, o workaround funcionou
+                  } else {
+                    Write-Host "ERROR: Failed to copy android\windows to windows\"
+                    exit 1
+                  }
+                } elseif (-not (Test-Path "windows")) {
+                  Write-Host "ERROR: Windows platform does not exist and cannot be created."
+                  Write-Host "The Flutter tool is rejecting the directory name 'h4nd-pdv'."
+                  Write-Host "Permanent solution: Rename the repository from 'h4nd-pdv' to 'h4nd_pdv' or 'mx_cloud_pdv'"
+                  Write-Host "Temporary workaround: Create the windows/ directory structure manually"
+                  exit 1
+                } else {
+                  Write-Host "✓ Windows platform already exists, continuing..."
+                }
+              } else {
+                Write-Host "Fixing package name and retrying..."
+                (Get-Content pubspec.yaml) -replace '^name:\s*.+$', 'name: mx_cloud_pdv' | Set-Content pubspec.yaml
+                flutter create --platforms=windows .
+              }
+            } else {
+              Write-Host "✓ flutter create completed successfully"
+            }
+            
+            # Verificação final: se o diretório windows/ existe, o step foi bem-sucedido
+            if (Test-Path "windows") {
+              Write-Host "=========================================="
+              Write-Host "✓ SUCCESS: Windows platform is ready"
+              Write-Host "=========================================="
+            } else {
+              Write-Host "=========================================="
+              Write-Host "ERROR: Windows platform directory does not exist"
+              Write-Host "=========================================="
+              exit 1
+            }
           }
-          
-          # Stub para stone_thermal_adapter_loader.dart
-          $stoneThermalLoaderPath = "lib/data/adapters/printing/providers/stone_thermal_adapter_loader.dart"
-          if (Test-Path $stoneThermalLoaderPath) {
-            Copy-Item $stoneThermalLoaderPath "$stoneThermalLoaderPath.bak"
-            $stubLines = @(
-              "// STUB: Este arquivo substitui stone_thermal_adapter_loader.dart quando stone_payments não está disponível (Windows)",
-              "import '../../../../core/printing/print_provider.dart';",
-              "import 'stone_thermal_adapter.dart';",
-              "",
-              "/// Stub do loader do Stone Thermal Adapter (não disponível no Windows)",
-              "PrintProvider Function(Map<String, dynamic>?) createStoneThermalAdapterLoader() {",
-              "  return (settings) {",
-              "    return StoneThermalAdapter(settings: settings);",
-              "  };",
-              "}"
-            )
-            Set-Content -Path $stoneThermalLoaderPath -Value ($stubLines -join "`r`n")
-            Write-Host "   ✅ Stub criado: $stoneThermalLoaderPath"
-          }
-          
-          # Stub para stone_transaction_mapper.dart
-          $stoneMapperPath = "lib/data/adapters/payment/providers/mappers/stone_transaction_mapper.dart"
-          if (Test-Path $stoneMapperPath) {
-            Copy-Item $stoneMapperPath "$stoneMapperPath.bak"
-            $stubLines = @(
-              "// STUB: Este arquivo substitui stone_transaction_mapper.dart quando stone_payments não está disponível (Windows)",
-              "import '../../../../../core/payment/payment_transaction_data.dart';",
-              "",
-              "/// Stub do mapper de transações Stone (não disponível no Windows)",
-              "class StoneTransactionMapper {",
-              "  /// Stub - lança erro pois Stone SDK não está disponível no Windows",
-              "  static PaymentTransactionData fromStoneTransaction(dynamic transaction) {",
-              "    throw UnimplementedError('Stone Transaction Mapper não disponível no Windows');",
-              "  }",
-              "  ",
-              "  /// Stub - lança erro pois Stone SDK não está disponível no Windows",
-              "  static PaymentTransactionData fromStoneMetadata(Map<String, dynamic> metadata) {",
-              "    throw UnimplementedError('Stone Transaction Mapper não disponível no Windows');",
-              "  }",
-              "}"
-            )
-            Set-Content -Path $stoneMapperPath -Value ($stubLines -join "`r`n")
-            Write-Host "   ✅ Stub criado: $stoneMapperPath"
-          }
-          
-          # Stub para print_provider_registry.dart (remove import do loader)
-          $printRegistryPath = "lib/data/adapters/printing/print_provider_registry.dart"
-          if (Test-Path $printRegistryPath) {
-            Copy-Item $printRegistryPath "$printRegistryPath.bak"
-            $stubLines = @(
-              "import '../../../../core/printing/print_provider.dart';",
-              "import 'package:flutter/foundation.dart';",
-              "import 'providers/elgin_thermal_adapter.dart';",
-              "import 'providers/pdf_printer_adapter.dart';",
-              "import '../../../../core/printing/print_config.dart';",
-              "import '../../../../core/config/flavor_config.dart';",
-              "",
-              "/// Cria o adapter Stone Thermal - STUB para Windows (não disponível)",
-              "PrintProvider _createStoneThermalAdapter(Map<String, dynamic>? settings) {",
-              "  // No Windows, o Stone Thermal Adapter não está disponível",
-              "  throw UnimplementedError('Stone Thermal Adapter não disponível no Windows');",
-              "}",
-              "",
-              "/// Registry para gerenciar providers de impressão",
-              "class PrintProviderRegistry {",
-              "  static final Map<String, PrintProvider Function(Map<String, dynamic>?)> _factories = {};",
-              "  static final Map<String, PrintProvider> _instances = {};",
-              "  ",
-              "  /// Registra um provider factory",
-              "  static void registerProvider(",
-              "    String key,",
-              "    PrintProvider Function(Map<String, dynamic>?) factory,",
-              "  ) {",
-              "    _factories[key] = factory;",
-              "    debugPrint('✅ Print provider registrado: `$key`');",
-              "  }",
-              "  ",
-              "  /// Obtém um provider pelo key",
-              "  static PrintProvider? getProvider(String key, {Map<String, dynamic>? settings}) {",
-              "    // Verifica se já existe instância",
-              "    if (_instances.containsKey(key)) {",
-              "      return _instances[key];",
-              "    }",
-              "    ",
-              "    // Cria nova instância",
-              "    final factory = _factories[key];",
-              "    if (factory == null) {",
-              "      debugPrint('⚠️ Print provider não encontrado: `$key`');",
-              "      return null;",
-              "    }",
-              "    ",
-              "    final provider = factory(settings);",
-              "    _instances[key] = provider;",
-              "    return provider;",
-              "  }",
-              "  ",
-              "  /// Registra todos os providers disponíveis baseado na configuração",
-              "  static Future<void> registerAll(PrintConfig config) async {",
-              "    // PDF sempre disponível",
-              "    registerProvider('pdf', (_) => PDFPrinterAdapter());",
-              "    ",
-              "    if (config.canUseProvider('stone_thermal')) {",
-              "      // No Windows, o Stone Thermal não está disponível (mesmo se flavor for stoneP2)",
-              "      debugPrint('ℹ️ Stone Thermal Adapter não registrado (não disponível no Windows)');",
-              "    }",
-              "    ",
-              "    if (config.canUseProvider('elgin_thermal')) {",
-              "      registerProvider('elgin_thermal', (settings) {",
-              "        return ElginThermalAdapter(settings: settings);",
-              "      });",
-              "    }",
-              "    ",
-              "    debugPrint('📦 Total de print providers registrados: `${_factories.length}`');",
-              "  }",
-              "  ",
-              "  /// Lista todos os providers registrados",
-              "  static List<String> getRegisteredProviders() {",
-              "    return _factories.keys.toList();",
-              "  }",
-              "  ",
-              "  /// Limpa instâncias (útil para testes)",
-              "  static void clear() {",
-              "    _instances.clear();",
-              "  }",
-              "}"
-            )
-            Set-Content -Path $printRegistryPath -Value ($stubLines -join "`r`n")
-            Write-Host "   ✅ Stub criado: $printRegistryPath (import do loader removido)"
-          }
-          
-          Write-Host ""
-          Write-Host "✅ Preparação concluída"
-          Write-Host "   O pacote stone_payments NÃO será incluído no build do Windows"
 
-      - name: Clean Flutter build cache
-        run: flutter clean
-      
+      - name: Verify package name after platform creation
+        run: |
+          $packageName = (Get-Content pubspec.yaml | Select-String '^name:\s*(.+)$').Matches.Groups[1].Value.Trim()
+          Write-Host "Package name after platform creation: $packageName"
+          if ($packageName -ne 'mx_cloud_pdv') {
+            Write-Host "ERROR: Package name was changed! Expected 'mx_cloud_pdv', got: $packageName"
+            Write-Host "Restoring correct package name..."
+            (Get-Content pubspec.yaml) -replace '^name:\s*.+$', 'name: mx_cloud_pdv' | Set-Content pubspec.yaml
+            Write-Host "Package name restored to: mx_cloud_pdv"
+            # Verificar novamente
+            $verifyName = (Get-Content pubspec.yaml | Select-String '^name:\s*(.+)$').Matches.Groups[1].Value.Trim()
+            Write-Host "Verified package name: $verifyName"
+          }
+
       - name: Install dependencies
-        run: flutter pub get
+        run: |
+          # Garantir que o nome do pacote está correto antes de pub get
+          $packageName = (Get-Content pubspec.yaml | Select-String '^name:\s*(.+)$').Matches.Groups[1].Value.Trim()
+          if ($packageName -ne 'mx_cloud_pdv') {
+            Write-Host "Fixing package name before pub get: $packageName -> mx_cloud_pdv"
+            (Get-Content pubspec.yaml) -replace '^name:\s*.+$', 'name: mx_cloud_pdv' | Set-Content pubspec.yaml
+          }
+          flutter pub get
 
       - name: Verify Flutter setup
         run: flutter doctor -v
-
-      - name: Build Windows
+      
+      - name: Final package name verification
         run: |
-          # CRÍTICO: Windows sempre usa flavor "mobile" (não suporta SDK Stone)
-          $flavor = "mobile"
-          $buildMode = "$env:BUILD_MODE"
-          $buildType = "$env:BUILD_TYPE"
-          
-          Write-Host "=========================================="
-          Write-Host "BUILD CONFIGURATION"
-          Write-Host "Branch: ${{ github.ref }}"
-          Write-Host "Flavor: $flavor (FORÇADO para mobile no Windows)"
-          Write-Host "Build Mode: $buildMode"
-          Write-Host "Build Type: $buildType"
-          Write-Host "=========================================="
-          Write-Host ""
-          Write-Host "⚠️ IMPORTANTE: Windows sempre usa flavor 'mobile'"
-          Write-Host "   Mesmo que o input seja 'stoneP2', forçamos 'mobile'"
-          Write-Host "   porque o Windows não suporta o SDK Stone"
-          Write-Host ""
-          
-          if ($buildMode -eq "release") {
-            Write-Host "Building in RELEASE mode (main branch)"
-          flutter build windows --release --dart-define=FLAVOR=$flavor
-          } else {
-            Write-Host "Building in DEBUG mode (develop branch)"
-            flutter build windows --debug --dart-define=FLAVOR=$flavor
-          }
-        continue-on-error: false
-
-      - name: Remove stone_payments from plugin registry (CRITICAL - prevents DLL error)
-        run: |
-          Write-Host "=========================================="
-          Write-Host "REMOVING STONE_PAYMENTS FROM PLUGIN REGISTRY"
-          Write-Host "=========================================="
-          Write-Host "   CRÍTICO: Remove o plugin do generated_plugin_registrant.cc"
-          Write-Host "   Isso evita que o Flutter tente carregar DLLs do SDK Stone"
-          Write-Host "   que não existem para Windows, causando erro em runtime"
-          
-          # Busca o arquivo generated_plugin_registrant.cc
-          $pluginFile = $null
-          $searchPaths = @(
-            "build\windows\flutter\generated_plugin_registrant.cc",
-            "build\windows\x64\flutter\generated_plugin_registrant.cc",
-            "windows\flutter\generated_plugin_registrant.cc"
-          )
-          
-          foreach ($path in $searchPaths) {
-            if (Test-Path $path) {
-              $pluginFile = (Resolve-Path $path).Path
-              Write-Host "✅ Arquivo encontrado: $pluginFile"
-              break
-            }
-          }
-          
-          # Busca recursiva se não encontrou
-          if (-not $pluginFile -and (Test-Path "build\windows")) {
-            $foundFiles = Get-ChildItem "build\windows" -Recurse -Filter "generated_plugin_registrant.cc" -ErrorAction SilentlyContinue
-            if ($foundFiles -and $foundFiles.Count -gt 0) {
-              $pluginFile = $foundFiles[0].FullName
-              Write-Host "✅ Arquivo encontrado via busca recursiva: $pluginFile"
-            }
-          }
-          
-          if ($pluginFile) {
-            Write-Host "🔧 Removendo plugin stone_payments do registro..."
-            
-            # Cria backup
-            $backupFile = "$pluginFile.bak"
-            Copy-Item $pluginFile $backupFile -Force
-            Write-Host "   Backup criado: $backupFile"
-            
-            # Lê o conteúdo
-            $content = Get-Content $pluginFile -Raw
-            
-            # Remove includes do stone_payments
-            $content = $content -replace '#include <stone_payments/stone_payments_plugin\.h>', '// #include <stone_payments/stone_payments_plugin.h> // Removido: não suporta Windows'
-            
-            # Remove registro do plugin
-            $content = $content -replace 'stone_payments::StonePaymentsPluginRegisterWithRegistrar\([^)]*\);', '// stone_payments plugin removido (não suporta Windows)'
-            
-            # Remove linhas vazias duplicadas
-            $content = $content -replace "(\r?\n\s*){3,}", "`r`n`r`n"
-            
-            # Salva
-            Set-Content -Path $pluginFile -Value $content -NoNewline
-            
-            Write-Host "✅ Plugin stone_payments removido do registro"
-            Write-Host "   Arquivo modificado: $pluginFile"
-            Write-Host ""
-            Write-Host "🔨 Recompilando executável com plugin removido..."
-            
-            # Recompila apenas o executável usando CMake
-            $cmakeBuildDir = "build\windows"
-            if (Test-Path "$cmakeBuildDir\CMakeCache.txt") {
-              cd $cmakeBuildDir
-              cmake --build . --config $buildType
-              cd ..\..
-              Write-Host "✅ Executável recompilado sem o plugin stone_payments"
-            } else {
-              Write-Host "⚠️ CMakeCache.txt não encontrado"
-              Write-Host "   O executável pode ainda tentar carregar o plugin"
-              Write-Host "   Mas o arquivo foi modificado e será usado no próximo build"
-            }
-          } else {
-            Write-Host "⚠️ Arquivo generated_plugin_registrant.cc não encontrado"
-            Write-Host "   Isso pode significar que:"
-            Write-Host "   1. O build não foi concluído completamente"
-            Write-Host "   2. O plugin stone_payments não foi registrado (já removido do pubspec.yaml)"
-            Write-Host "   3. O arquivo está em um local diferente"
-            Write-Host ""
-            Write-Host "   Se o erro de DLL persistir, verifique manualmente o arquivo gerado"
-          }
-        continue-on-error: true
-
-      - name: Verify stone_payments was removed
-        run: |
-          Write-Host "=========================================="
-          Write-Host "VERIFYING STONE_PAYMENTS REMOVAL"
-          Write-Host "=========================================="
-          
-          # Verifica se stone_payments foi removido do pubspec.yaml
-          $pubspecContent = Get-Content pubspec.yaml -Raw
-          if ($pubspecContent -match 'stone_payments') {
-            Write-Host "❌ ERRO: stone_payments ainda está no pubspec.yaml!"
-            Write-Host "   O build pode falhar ou incluir o SDK Stone"
+          $packageName = (Get-Content pubspec.yaml | Select-String '^name:\s*(.+)$').Matches.Groups[1].Value.Trim()
+          Write-Host "Final package name verification: $packageName"
+          if ($packageName -ne 'mx_cloud_pdv') {
+            Write-Host "ERROR: Package name is incorrect: $packageName (expected: mx_cloud_pdv)"
             exit 1
-          } else {
-            Write-Host "✅ stone_payments não encontrado no pubspec.yaml"
           }
-          
-          # Verifica se os stubs foram criados
-          $stubPaths = @(
-            "lib/data/adapters/payment/providers/stone_pos_adapter.dart",
-            "lib/data/adapters/printing/providers/stone_thermal_adapter.dart",
-            "lib/data/adapters/printing/providers/stone_thermal_adapter_loader.dart",
-            "lib/data/adapters/payment/providers/mappers/stone_transaction_mapper.dart",
-            "lib/data/adapters/printing/print_provider_registry.dart"
-          )
-          
-          foreach ($stubPath in $stubPaths) {
-            if (Test-Path $stubPath) {
-              $stubContent = Get-Content $stubPath -Raw
-              if ($stubContent -match 'STUB') {
-                Write-Host "✅ Stub criado corretamente: $stubPath"
-              } else {
-                Write-Host "⚠️ $stubPath existe mas não parece ser um stub"
-              }
-            } else {
-              Write-Host "⚠️ $stubPath não encontrado"
-            }
+          Write-Host "✓ Package name is correct: $packageName"
+
+      - name: Build Windows (Release)
+        run: |
+          $flavor = "$env:FLAVOR"
+          if ([string]::IsNullOrWhiteSpace($flavor) -or $flavor -eq '') {
+            $flavor = "mobile"
           }
-          
-          Write-Host ""
-          Write-Host "✅ Verificação concluída"
-          Write-Host "   O pacote stone_payments NÃO será incluído no executável Windows"
+          Write-Host "Building with flavor: $flavor"
+          flutter build windows --release --dart-define=FLAVOR=$flavor
+        continue-on-error: false
 
       - name: Create ZIP artifact
         run: |
           $versionLine = Get-Content pubspec.yaml | Select-String 'version:'
           $version = ($versionLine.Line -split ':')[1].Trim()
-          # Windows sempre usa flavor "mobile" (não suporta SDK Stone)
-          $flavor = "mobile"
-          $buildMode = "$env:BUILD_MODE"
-          $buildType = "$env:BUILD_TYPE"
-          
-          $zipName = "mx_cloud_pdv_windows_${flavor}_${buildMode}_${version}.zip"
-          
-          Write-Host "=========================================="
-          Write-Host "CREATING ZIP ARTIFACT"
-          Write-Host "Build Type: $buildType"
-          Write-Host "Source Path: build\windows\x64\runner\$buildType\*"
-          Write-Host "ZIP Name: $zipName"
-          Write-Host "=========================================="
-          
-          # Verificar se o diretório existe
-          $sourcePath = "build\windows\x64\runner\$buildType"
-          if (-not (Test-Path $sourcePath)) {
-            Write-Host "ERROR: Build directory does not exist: $sourcePath"
-            Write-Host "Available directories:"
-            Get-ChildItem "build\windows\x64\runner\" -Directory | ForEach-Object { Write-Host "  - $($_.Name)" }
-            exit 1
+          $flavor = "$env:FLAVOR"
+          if ([string]::IsNullOrWhiteSpace($flavor) -or $flavor -eq '') {
+            $flavor = "mobile"
           }
+          $zipName = "mx_cloud_pdv_windows_${flavor}_${version}.zip"
           
-          Write-Host "Creating ZIP from: $sourcePath"
-          Compress-Archive -Path "$sourcePath\*" -DestinationPath $zipName -Force
+          Write-Host "Creating ZIP: $zipName"
+          Compress-Archive -Path "build\windows\x64\runner\Release\*" -DestinationPath $zipName -Force
           
           Write-Host "ZIP_NAME=$zipName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           
@@ -540,10 +267,9 @@ jobs:
       - name: Upload Windows build artifact
         uses: actions/upload-artifact@v4
         with:
-          # Windows sempre usa flavor "mobile"
-          name: windows-build-mobile-${{ env.BUILD_MODE }}
+          name: windows-build-${{ env.FLAVOR }}
           path: |
-            build/windows/x64/runner/${{ env.BUILD_TYPE }}/**
+            build/windows/x64/runner/Release/**
             *.zip
           retention-days: 30
           if-no-files-found: error
