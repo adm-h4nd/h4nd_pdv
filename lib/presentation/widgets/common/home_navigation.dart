@@ -366,21 +366,25 @@ class _HomeNavigationState extends State<HomeNavigation> {
         final navigationItems = _getNavigationItems(servicesProvider);
 
         return Scaffold(
-          body: IndexedStack(
-            index: _currentIndex,
-            children: navigationItems.asMap().entries.map((entry) {
-              final index = entry.key;
-              final item = entry.value;
-              // Passa o notifier para BalcaoScreen se for a tela balcão
-              if (item.screen is BalcaoScreen) {
-                return BalcaoScreen(
-                  hideAppBar: (item.screen as BalcaoScreen).hideAppBar,
-                  navigationIndexNotifier: _navigationIndexNotifier,
-                  screenIndex: index,
-                );
-              }
-              return item.screen;
-            }).toList(),
+          body: SafeArea(
+            top: true,
+            bottom: false, // Bottom navigation bar já tem seu próprio espaço
+            child: IndexedStack(
+              index: _currentIndex,
+              children: navigationItems.asMap().entries.map((entry) {
+                final index = entry.key;
+                final item = entry.value;
+                // Passa o notifier para BalcaoScreen se for a tela balcão
+                if (item.screen is BalcaoScreen) {
+                  return BalcaoScreen(
+                    hideAppBar: (item.screen as BalcaoScreen).hideAppBar,
+                    navigationIndexNotifier: _navigationIndexNotifier,
+                    screenIndex: index,
+                  );
+                }
+                return item.screen;
+              }).toList(),
+            ),
           ),
           bottomNavigationBar: Container(
             decoration: BoxDecoration(

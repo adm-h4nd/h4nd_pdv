@@ -50,3 +50,4 @@ Crie um arquivo customizado que não inclui o plugin stone_payments:
 
 Agora o arquivo customizado será usado em vez do gerado automaticamente, e o plugin stone_payments não será registrado no Windows.
 
+

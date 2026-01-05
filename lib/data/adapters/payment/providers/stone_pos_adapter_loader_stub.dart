@@ -14,3 +14,4 @@ PaymentProvider Function(Map<String, dynamic>?) createStonePosAdapterLoader() {
   };
 }
 
+

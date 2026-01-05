@@ -84,3 +84,4 @@ class StonePOSAdapter implements PaymentProvider {
 
 Write-Host "✅ Stubs criados com sucesso"
 
+

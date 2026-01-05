@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 /// Widget da logo H4ND
-/// H, N, D em azul escuro, 4 em verde, pdv em verde abaixo
+/// H, N, D em azul escuro, 4 em verde, texto em verde abaixo (pdv ou automação)
 class H4NDLogo extends StatelessWidget {
   final double? fontSize;
   final bool showPdv;
   final Color? blueColor;
   final Color? greenColor;
+  final String? textoInferior; // Se fornecido, usa este texto ao invés de "pdv"
 
   const H4NDLogo({
     super.key,
@@ -15,6 +16,7 @@ class H4NDLogo extends StatelessWidget {
     this.showPdv = true,
     this.blueColor,
     this.greenColor,
+    this.textoInferior,
   });
 
   @override
@@ -79,12 +81,12 @@ class H4NDLogo extends StatelessWidget {
             ),
           ],
         ),
-        // pdv abaixo, alinhado à direita do final de H4ND
-        if (showPdv)
+        // Texto inferior (pdv ou automação), alinhado à direita do final de H4ND
+        if (showPdv || textoInferior != null)
           Padding(
             padding: const EdgeInsets.only(top: 2),
             child: Text(
-              'pdv',
+              textoInferior ?? 'pdv',
               style: GoogleFonts.inter(
                 fontSize: size * 0.35,
                 fontWeight: FontWeight.w600,

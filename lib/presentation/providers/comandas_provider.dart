@@ -209,6 +209,21 @@ class ComandasProvider extends ChangeNotifier {
       }),
     );
     
+    // Escuta eventos de mesa transferida (para atualizar comandas relacionadas)
+    _eventBusSubscriptions.add(
+      eventBus.on(TipoEvento.mesaTransferida).listen((evento) {
+        if (evento.mesaId != null) {
+          debugPrint('📢 [ComandasProvider] Evento: Mesa ${evento.mesaId} transferida');
+          debugPrint('   Buscando comandas relacionadas e atualizando...');
+          
+          // Busca comandas do servidor que estão relacionadas a essa mesa
+          // Por enquanto, apenas recarrega todas as comandas
+          // TODO: Otimizar para buscar apenas comandas da mesa específica
+          loadComandas(refresh: true);
+        }
+      }),
+    );
+    
     debugPrint('✅ Listener do Event Bus configurado para comandas');
   }
 

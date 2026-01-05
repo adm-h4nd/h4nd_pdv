@@ -55,3 +55,4 @@ Enquanto não há uma solução definitiva, você pode:
 2. Se não tiver, criar uma solução para excluir o plugin do registro no Windows
 3. Ou criar um stub do plugin que não tenta carregar DLLs
 
+

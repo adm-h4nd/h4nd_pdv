@@ -404,6 +404,7 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
     for (var atributo in _produto!.atributos) {
       if (!_atributoCompleto(atributo)) {
         debugPrint('❌ _podeConfirmar: atributo "${atributo.nome}" não está completo');
+        debugPrint('   Seleções para ${atributo.nome}: ${_selecoesAtributos[atributo.id]}');
         return false;
       }
     }
@@ -415,7 +416,17 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
       // Sem proporções: verificar se há uma variação única que corresponde às seleções
       final variacao = _obterVariacaoSelecionada();
       if (variacao == null) {
-        debugPrint('❌ _podeConfirmar: nenhuma variação encontrada para seleções (sem proporções)');
+        // Se não encontrou variação, mas todos os atributos estão completos,
+        // pode ser que a variação não exista ainda ou há um problema na busca
+        // Nesse caso, vamos permitir se o preço pode ser calculado
+        debugPrint('⚠️ _podeConfirmar: nenhuma variação encontrada para seleções (sem proporções)');
+        debugPrint('   Tentando calcular preço como fallback...');
+        final preco = _calcularPrecoComProporcoes();
+        if (preco != null) {
+          debugPrint('✅ _podeConfirmar: preço calculado com sucesso: $preco');
+          return true;
+        }
+        debugPrint('❌ _podeConfirmar: preço também não pode ser calculado');
         return false;
       }
       debugPrint('✅ _podeConfirmar: variação encontrada: ${variacao.nomeCompleto}');
@@ -437,16 +448,25 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
 
   /// Obtém a variação selecionada baseada nas seleções de atributos
   ProdutoVariacaoLocal? _obterVariacaoSelecionada() {
-    if (_produto == null || _produto!.variacoes.isEmpty) return null;
+    if (_produto == null || _produto!.variacoes.isEmpty) {
+      debugPrint('⚠️ _obterVariacaoSelecionada: produto é null ou não tem variações');
+      return null;
+    }
     
     // Se não há atributos proporcionais, buscar variação única que corresponde
     final temAtributosProporcionais = _produto!.atributos.any((a) => a.permiteSelecaoProporcional);
     
     if (!temAtributosProporcionais) {
+      debugPrint('🔍 _obterVariacaoSelecionada: buscando variação (sem proporções)');
+      debugPrint('   Seleções: $_selecoesAtributos');
+      debugPrint('   Total de variações: ${_produto!.variacoes.length}');
+      
       // Buscar variação que corresponde exatamente a todas as seleções
       for (var variacao in _produto!.variacoes) {
         bool corresponde = true;
+        int atributosCorrespondentes = 0;
         
+        // Verificar se a variação tem valores para todos os atributos selecionados
         for (var entry in _selecoesAtributos.entries) {
           final atributoId = entry.key;
           final valoresSelecionados = entry.value;
@@ -461,10 +481,13 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
             orElse: () => _produto!.atributos.first,
           );
           
+          // Verificar se a variação tem algum valor que corresponde às seleções
           final temValor = variacao.valores.any((vv) {
+            // Comparar por ID primeiro (mais confiável)
             if (valoresSelecionados.contains(vv.atributoValorId)) {
               return true;
             }
+            // Comparar por nome como fallback
             if (vv.nomeAtributo == atributo.nome) {
               return atributo.valores.any((av) => 
                 valoresSelecionados.contains(av.atributoValorId) &&
@@ -474,16 +497,22 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
             return false;
           });
           
-          if (!temValor) {
+          if (temValor) {
+            atributosCorrespondentes++;
+          } else {
             corresponde = false;
             break;
           }
         }
         
-        if (corresponde) {
+        // Verificar se todos os atributos do produto têm seleções correspondentes
+        if (corresponde && atributosCorrespondentes == _produto!.atributos.length) {
+          debugPrint('✅ _obterVariacaoSelecionada: variação encontrada: ${variacao.nomeCompleto}');
           return variacao;
         }
       }
+      
+      debugPrint('❌ _obterVariacaoSelecionada: nenhuma variação corresponde às seleções');
     }
     
     return null;
@@ -1251,23 +1280,32 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
               ),
               const SizedBox(width: 16),
               // Botão confirmar
-              ElevatedButton(
-                onPressed: _podeConfirmar() ? _confirmar : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primaryColor,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: Text(
-                  'Adicionar',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+              Builder(
+                builder: (context) {
+                  final podeConfirmar = _podeConfirmar();
+                  return ElevatedButton(
+                    onPressed: podeConfirmar ? _confirmar : null,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: podeConfirmar 
+                          ? AppTheme.primaryColor 
+                          : Colors.grey.shade300,
+                      foregroundColor: podeConfirmar 
+                          ? Colors.white 
+                          : Colors.grey.shade600,
+                      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text(
+                      'Adicionar',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  );
+                },
               ),
             ],
           ),
@@ -1570,117 +1608,123 @@ class _SelecionarProdutoModalState extends State<SelecionarProdutoModal> {
           // Preço unitário e quantidade na mesma linha
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Preço unitário
               if (precoUnitario != null)
-                Column(
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Preço unitário',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 11,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'R\$ ${precoUnitario.toStringAsFixed(2)}',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.primaryColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                const SizedBox.shrink(),
+              const SizedBox(width: 16),
+              // Controle de quantidade
+              Flexible(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Preço unitário',
+                      'Quantidade',
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 11,
                         color: Colors.grey.shade600,
                       ),
                     ),
                     const SizedBox(height: 2),
-                    Text(
-                      'R\$ ${precoUnitario.toStringAsFixed(2)}',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: AppTheme.primaryColor,
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: _quantidade > 1
+                                  ? () => _atualizarQuantidade(_quantidade - 1)
+                                  : null,
+                              borderRadius: const BorderRadius.only(
+                                topLeft: Radius.circular(10),
+                                bottomLeft: Radius.circular(10),
+                              ),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                child: Icon(
+                                  Icons.remove,
+                                  size: 18,
+                                  color: _quantidade > 1 
+                                      ? Colors.grey.shade700 
+                                      : Colors.grey.shade400,
+                                ),
+                              ),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              border: Border.symmetric(
+                                vertical: BorderSide(
+                                  color: Colors.grey.shade300,
+                                  width: 1,
+                                ),
+                              ),
+                            ),
+                            child: Text(
+                              '$_quantidade',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.grey.shade800,
+                              ),
+                            ),
+                          ),
+                          Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: () => _atualizarQuantidade(_quantidade + 1),
+                              borderRadius: const BorderRadius.only(
+                                topRight: Radius.circular(10),
+                                bottomRight: Radius.circular(10),
+                              ),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                child: Icon(
+                                  Icons.add,
+                                  size: 18,
+                                  color: Colors.grey.shade700,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
-                )
-              else
-                const SizedBox.shrink(),
-              // Controle de quantidade
-              Row(
-                children: [
-                  Text(
-                    'Quantidade: ',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 13,
-                      color: Colors.grey.shade700,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade50,
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: _quantidade > 1
-                                ? () => _atualizarQuantidade(_quantidade - 1)
-                                : null,
-                            borderRadius: const BorderRadius.only(
-                              topLeft: Radius.circular(10),
-                              bottomLeft: Radius.circular(10),
-                            ),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                              child: Icon(
-                                Icons.remove,
-                                size: 18,
-                                color: _quantidade > 1 
-                                    ? Colors.grey.shade700 
-                                    : Colors.grey.shade400,
-                              ),
-                            ),
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            border: Border.symmetric(
-                              vertical: BorderSide(
-                                color: Colors.grey.shade300,
-                                width: 1,
-                              ),
-                            ),
-                          ),
-                          child: Text(
-                            '$_quantidade',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.grey.shade800,
-                            ),
-                          ),
-                        ),
-                        Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: () => _atualizarQuantidade(_quantidade + 1),
-                            borderRadius: const BorderRadius.only(
-                              topRight: Radius.circular(10),
-                              bottomRight: Radius.circular(10),
-                            ),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                              child: Icon(
-                                Icons.add,
-                                size: 18,
-                                color: Colors.grey.shade700,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+                ),
               ),
             ],
           ),

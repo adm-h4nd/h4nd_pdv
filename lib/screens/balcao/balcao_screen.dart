@@ -37,6 +37,7 @@ class BalcaoPaymentHelper {
         context,
         venda: vendaAtual,
         produtosAgrupados: produtosAgrupados,
+        permitirNotaParcial: false, // Balcão não permite nota parcial
         onPagamentoProcessado: () {
           // onPagamentoProcessado é chamado quando um pagamento é processado (mesmo parcial)
           // Permite que o chamador saiba que houve um pagamento e pode reagir

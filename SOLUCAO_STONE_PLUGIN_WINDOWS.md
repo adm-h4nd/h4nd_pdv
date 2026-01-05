@@ -79,3 +79,4 @@ Após aplicar a solução:
 - A solução definitiva é excluir o plugin do registro no Windows
 - O código Dart já verifica a plataforma antes de usar o SDK Stone, mas isso não impede o registro nativo
 
+

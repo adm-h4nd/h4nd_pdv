@@ -35,6 +35,9 @@ enum TipoEvento {
   /// Status da mesa mudou (qualquer mudança)
   statusMesaMudou,
   
+  /// Mesa transferida (requer atualização do servidor)
+  mesaTransferida,
+  
   // === PRODUTOS ===
   /// Produto criado
   produtoCriado,
@@ -341,6 +344,20 @@ class AppEventBus {
         if (dadosExtras != null) ...dadosExtras,
       },
     ));
+  }
+
+  void dispararMesaTransferida({
+    required String mesaId,
+  }) {
+    debugPrint('📢 [AppEventBus] Disparando evento mesaTransferida para mesa: $mesaId');
+    disparar(AppEvent(
+      tipo: TipoEvento.mesaTransferida,
+      dominio: DominioEvento.mesa,
+      dados: {
+        'mesaId': mesaId,
+      },
+    ));
+    debugPrint('✅ [AppEventBus] Evento mesaTransferida disparado');
   }
 
   // === PRODUTOS ===

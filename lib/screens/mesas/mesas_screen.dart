@@ -21,7 +21,7 @@ import '../../models/mesas/entidade_produtos.dart';
 import '../../data/models/mesa_alerta.dart';
 // TODO: Ocultado temporariamente - descomentar quando necessário
 // import 'widgets/mesa_insights_panel.dart';
-import 'widgets/mesa_alerta_badge.dart';
+// import 'widgets/mesa_alerta_badge.dart'; // Ocultado - badges de insight não são mais exibidos
 import 'package:google_fonts/google_fonts.dart';
 import '../../widgets/h4nd_loading.dart';
 
@@ -898,47 +898,46 @@ class _MesasScreenState extends State<MesasScreen> {
                 ),
               ),
               
-              // Badges de alertas (se houver) - posicionados no canto superior direito
-              // Apenas para mesas ocupadas
-              if (isOcupada) ...[
-                Builder(
-                  builder: (context) {
-                    final alertasMesa = _getAlertasMesa(mesa.id);
-                    if (alertasMesa.isEmpty) return const SizedBox.shrink();
-                    
-                    return Positioned(
-                      top: tamanhos.cardPadding * 0.5,
-                      right: tamanhos.cardPadding * 0.5,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Badge de tempo sem pedir
-                          if (alertasMesa.any((a) => a.tipo == TipoAlertaMesa.tempoSemPedir))
-                            Padding(
-                              padding: const EdgeInsets.only(right: 4),
-                              child: MesaAlertaBadge(
-                                tipo: TipoAlertaMesa.tempoSemPedir,
-                                tooltip: alertasMesa
-                                    .firstWhere((a) => a.tipo == TipoAlertaMesa.tempoSemPedir)
-                                    .descricao,
-                                size: 20,
-                              ),
-                            ),
-                          // Badge de itens aguardando
-                          if (alertasMesa.any((a) => a.tipo == TipoAlertaMesa.itensAguardando))
-                            MesaAlertaBadge(
-                              tipo: TipoAlertaMesa.itensAguardando,
-                              tooltip: alertasMesa
-                                  .firstWhere((a) => a.tipo == TipoAlertaMesa.itensAguardando)
-                                  .descricao,
-                              size: 20,
-                            ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ],
+              // Badges de alertas (ocultados conforme solicitado)
+              // if (isOcupada) ...[
+              //   Builder(
+              //     builder: (context) {
+              //       final alertasMesa = _getAlertasMesa(mesa.id);
+              //       if (alertasMesa.isEmpty) return const SizedBox.shrink();
+              //       
+              //       return Positioned(
+              //         top: tamanhos.cardPadding * 0.5,
+              //         right: tamanhos.cardPadding * 0.5,
+              //         child: Row(
+              //           mainAxisSize: MainAxisSize.min,
+              //           children: [
+              //             // Badge de tempo sem pedir
+              //             if (alertasMesa.any((a) => a.tipo == TipoAlertaMesa.tempoSemPedir))
+              //               Padding(
+              //                 padding: const EdgeInsets.only(right: 4),
+              //                 child: MesaAlertaBadge(
+              //                   tipo: TipoAlertaMesa.tempoSemPedir,
+              //                   tooltip: alertasMesa
+              //                       .firstWhere((a) => a.tipo == TipoAlertaMesa.tempoSemPedir)
+              //                       .descricao,
+              //                   size: 20,
+              //                 ),
+              //               ),
+              //             // Badge de itens aguardando
+              //             if (alertasMesa.any((a) => a.tipo == TipoAlertaMesa.itensAguardando))
+              //               MesaAlertaBadge(
+              //                 tipo: TipoAlertaMesa.itensAguardando,
+              //                 tooltip: alertasMesa
+              //                     .firstWhere((a) => a.tipo == TipoAlertaMesa.itensAguardando)
+              //                     .descricao,
+              //                 size: 20,
+              //               ),
+              //           ],
+              //         ),
+              //       );
+              //     },
+              //   ),
+              // ],
               
               // Badge de pedidos pendentes (se houver) - posicionado no canto superior direito
               // O Provider já mantém o status atualizado via ListenableBuilder

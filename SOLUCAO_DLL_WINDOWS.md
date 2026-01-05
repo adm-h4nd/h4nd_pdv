@@ -102,3 +102,4 @@ Se o problema persistir, verifique:
 3. Se o CMake está instalado e no PATH
 4. Se há erros de compilação que não estão sendo mostrados
 
+

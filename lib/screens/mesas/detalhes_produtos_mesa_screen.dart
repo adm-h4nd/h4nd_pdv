@@ -948,15 +948,11 @@ class _DetalhesProdutosMesaScreenState extends State<DetalhesProdutosMesaScreen>
         _provider.loadProdutos(refresh: true);
         _provider.loadVendaAtual();
 
-        // Disparar eventos para atualizar outras telas
-        AppEventBus.instance.dispararStatusMesaMudou(
-          mesaId: widget.entidade.id,
-          dadosExtras: {'acao': 'transferencia', 'mesaDestinoId': mesaDestino.id},
-        );
-        AppEventBus.instance.dispararStatusMesaMudou(
-          mesaId: mesaDestino.id,
-          dadosExtras: {'acao': 'transferencia', 'mesaOrigemId': widget.entidade.id},
-        );
+        // Disparar eventos específicos de transferência para atualizar listagem de mesas
+        // O provider vai buscar do servidor e atualizar a UI automaticamente
+        debugPrint('📢 [DetalhesProdutosMesaScreen] Disparando eventos de transferência de mesa');
+        AppEventBus.instance.dispararMesaTransferida(mesaId: widget.entidade.id);
+        AppEventBus.instance.dispararMesaTransferida(mesaId: mesaDestino.id);
       } else {
         // Erro: exibir mensagem
         AppToast.showError(
@@ -1041,18 +1037,16 @@ class _DetalhesProdutosMesaScreenState extends State<DetalhesProdutosMesaScreen>
         _provider.loadProdutos(refresh: true);
         _provider.loadVendaAtual();
 
-        // Disparar eventos para atualizar outras telas
-        // Nota: Usando dispararStatusMesaMudou pois comandas estão vinculadas a mesas
-        // Se a venda tiver mesa, dispara evento para atualizar a mesa também
-        if (_provider.vendaAtual?.mesaId != null) {
-          AppEventBus.instance.dispararStatusMesaMudou(
-            mesaId: _provider.vendaAtual!.mesaId!,
-            dadosExtras: {
-              'acao': 'transferencia_comanda',
-              'comandaOrigemId': widget.entidade.id,
-              'comandaDestinoId': comandaDestino.id,
-            },
-          );
+        // Buscar mesa da comanda origem através da venda atual (se houver)
+        final vendaAtualMesaId = _provider.vendaAtual?.mesaId;
+        
+        // Disparar eventos específicos de transferência para atualizar listagem de mesas
+        // O provider vai buscar do servidor e atualizar a UI automaticamente
+        debugPrint('📢 [DetalhesProdutosMesaScreen] Disparando eventos de transferência de comanda');
+        
+        // Disparar evento para a mesa se a venda tiver mesa
+        if (vendaAtualMesaId != null) {
+          AppEventBus.instance.dispararMesaTransferida(mesaId: vendaAtualMesaId);
         }
       } else {
         // Erro: exibir mensagem

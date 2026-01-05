@@ -27,3 +27,4 @@ foreach ($file in $filesToRestore) {
 
 Write-Host "✅ Arquivos restaurados com sucesso"
 
+

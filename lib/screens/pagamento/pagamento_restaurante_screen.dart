@@ -38,6 +38,8 @@ class PagamentoRestauranteScreen extends StatefulWidget {
   final List<String>? vendaIds;
   /// Resumo das vendas para exibir informações (usado quando vendaIds != null)
   final List<VendaResumoDto>? vendasResumo;
+  /// Se true, permite exibir a opção de emitir nota parcial (apenas para mesa/comanda)
+  final bool permitirNotaParcial;
 
   const PagamentoRestauranteScreen({
     super.key,
@@ -48,6 +50,7 @@ class PagamentoRestauranteScreen extends StatefulWidget {
     this.isModal = false,
     this.vendaIds,
     this.vendasResumo,
+    this.permitirNotaParcial = true, // Padrão: true (mesa/comanda), false para balcão
   });
 
   /// Mostra o pagamento de forma adaptativa:
@@ -61,6 +64,7 @@ class PagamentoRestauranteScreen extends StatefulWidget {
     VoidCallback? onVendaConcluida,
     List<String>? vendaIds,
     List<VendaResumoDto>? vendasResumo,
+    bool permitirNotaParcial = true, // Padrão: true (mesa/comanda), false para balcão
   }) async {
     final adaptive = AdaptiveLayoutProvider.of(context);
     
@@ -77,6 +81,7 @@ class PagamentoRestauranteScreen extends StatefulWidget {
               isModal: false,
               vendaIds: vendaIds,
               vendasResumo: vendasResumo,
+              permitirNotaParcial: permitirNotaParcial,
             ),
           ),
         ),
@@ -96,6 +101,7 @@ class PagamentoRestauranteScreen extends StatefulWidget {
           isModal: true,
           vendaIds: vendaIds,
           vendasResumo: vendasResumo,
+          permitirNotaParcial: permitirNotaParcial,
         ),
       ),
     );
@@ -824,8 +830,8 @@ class _PagamentoRestauranteScreenState extends State<PagamentoRestauranteScreen>
           if (_isPagamentoMultiplasVendas)
             _buildInfoMultiplasVendas(adaptive),
           
-          // Opção de emitir nota parcial (apenas se houver saldo e não for múltiplas vendas)
-          if (!_saldoZerou && !_isPagamentoMultiplasVendas)
+          // Opção de emitir nota parcial (apenas se houver saldo, não for múltiplas vendas e permitirNotaParcial = true)
+          if (!_saldoZerou && !_isPagamentoMultiplasVendas && widget.permitirNotaParcial)
             _buildOpcaoNotaParcial(adaptive),
           
           // Lista de produtos (se emitir nota parcial estiver marcado)
@@ -1529,26 +1535,28 @@ class _PagamentoRestauranteScreenState extends State<PagamentoRestauranteScreen>
                       ),
                       child: Column(
                         children: [
+                          // Layout simplificado e sutil
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(
                                 Icons.timer_outlined,
                                 color: AppTheme.warningColor,
-                                size: 24,
+                                size: 20,
                               ),
-                              const SizedBox(width: 10),
+                              const SizedBox(width: 8),
                               Text(
-                                'Concluindo automaticamente em',
+                                'Conclusão Automática',
                                 style: GoogleFonts.inter(
-                                  fontSize: 14,
+                                  fontSize: adaptive.isMobile ? 13 : 14,
                                   fontWeight: FontWeight.w500,
                                   color: AppTheme.textPrimary,
                                 ),
                               ),
                               const SizedBox(width: 8),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                 decoration: BoxDecoration(
                                   color: AppTheme.warningColor,
                                   borderRadius: BorderRadius.circular(6),
@@ -1556,19 +1564,10 @@ class _PagamentoRestauranteScreenState extends State<PagamentoRestauranteScreen>
                                 child: Text(
                                   '$_tempoRestante',
                                   style: GoogleFonts.inter(
-                                    fontSize: 18,
+                                    fontSize: 16,
                                     fontWeight: FontWeight.w700,
                                     color: Colors.white,
                                   ),
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                'segundo${_tempoRestante != 1 ? 's' : ''}',
-                                style: GoogleFonts.inter(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                  color: AppTheme.textPrimary,
                                 ),
                               ),
                             ],
@@ -1582,14 +1581,27 @@ class _PagamentoRestauranteScreenState extends State<PagamentoRestauranteScreen>
                                 setState(() {});
                               },
                               icon: const Icon(Icons.close, size: 18),
-                              label: const Text('Não Concluir Automaticamente'),
+                              label: Text(
+                                adaptive.isMobile 
+                                    ? 'Cancelar Auto-conclusão'
+                                    : 'Não Concluir Automaticamente',
+                                style: GoogleFonts.inter(
+                                  fontSize: adaptive.isMobile ? 13 : 14,
+                                ),
+                                textAlign: TextAlign.center,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: AppTheme.warningColor,
                                 side: BorderSide(
                                   color: AppTheme.warningColor,
                                   width: 1.5,
                                 ),
-                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                padding: EdgeInsets.symmetric(
+                                  vertical: adaptive.isMobile ? 10 : 12,
+                                  horizontal: adaptive.isMobile ? 8 : 16,
+                                ),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(8),
                                 ),

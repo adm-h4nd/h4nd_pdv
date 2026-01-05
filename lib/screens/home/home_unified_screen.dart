@@ -325,7 +325,8 @@ class _HomeUnifiedScreenState extends State<HomeUnifiedScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
-      body: FutureBuilder<void>(
+      body: SafeArea(
+        child: FutureBuilder<void>(
           future: _configRepo.initializeDefaultConfig(_setor),
           builder: (context, snapshot) {
             if (!Hive.isBoxOpen(HomeWidgetConfigRepository.boxName)) {
@@ -382,6 +383,7 @@ class _HomeUnifiedScreenState extends State<HomeUnifiedScreen> {
               },
             );
           },
+        ),
       ),
     );
   }

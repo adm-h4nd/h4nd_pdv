@@ -287,13 +287,63 @@ class MesasProvider extends ChangeNotifier {
     );
     debugPrint('✅ [MesasProvider] Listener de mesaLiberada configurado');
     
+    // Escuta eventos de mesa transferida
+    debugPrint('🔧 [MesasProvider] Configurando listener para evento mesaTransferida');
+    _eventBusSubscriptions.add(
+      eventBus.on(TipoEvento.mesaTransferida).listen((evento) {
+        if (evento.mesaId != null) {
+          debugPrint('🔔 [MesasProvider] Evento mesaTransferida recebido: mesaId=${evento.mesaId}');
+          debugPrint('   Buscando mesa do servidor e atualizando lista...');
+          
+          // Busca a mesa do servidor e atualiza a lista
+          _atualizarMesasDoServidor([evento.mesaId!], forcar: true);
+        } else {
+          debugPrint('⚠️ [MesasProvider] Evento mesaTransferida recebido sem mesaId');
+        }
+      }),
+    );
+    debugPrint('✅ [MesasProvider] Listener de mesaTransferida configurado');
+    
     // Escuta eventos de status mudou
     // Não vai no servidor se a mesa está livre (venda foi finalizada)
     // porque o status já foi atualizado localmente
     _eventBusSubscriptions.add(
       eventBus.on(TipoEvento.statusMesaMudou).listen((evento) {
         if (evento.mesaId != null) {
+          final forcarAtualizacao = evento.get<bool>('forcarAtualizacao') ?? false;
+          final acao = evento.get<String>('acao');
+          
           debugPrint('📢 [MesasProvider] Evento: Status da mesa ${evento.mesaId} mudou');
+          if (acao != null) {
+            debugPrint('   Ação: $acao');
+          }
+          if (forcarAtualizacao) {
+            debugPrint('   ⚡ Forçando atualização imediata do servidor');
+          }
+          
+          // Se for transferência, sempre força atualização do servidor
+          if (forcarAtualizacao || acao == 'transferencia' || acao == 'transferencia_comanda') {
+            debugPrint('🔄 [MesasProvider] Transferência detectada - atualizando mesas do servidor imediatamente');
+            
+            // Busca mesa destino também se estiver nos dados extras
+            final mesaDestinoId = evento.get<String>('mesaDestinoId');
+            final mesaOrigemId = evento.get<String>('mesaOrigemId');
+            
+            final mesasParaAtualizar = <String>[evento.mesaId!];
+            if (mesaDestinoId != null && mesaDestinoId != evento.mesaId) {
+              mesasParaAtualizar.add(mesaDestinoId);
+              debugPrint('   📋 Também atualizando mesa destino: $mesaDestinoId');
+            }
+            if (mesaOrigemId != null && mesaOrigemId != evento.mesaId) {
+              mesasParaAtualizar.add(mesaOrigemId);
+              debugPrint('   📋 Também atualizando mesa origem: $mesaOrigemId');
+            }
+            
+            // Atualiza do servidor e força notificação
+            _atualizarMesasDoServidor(mesasParaAtualizar, forcar: true);
+            return;
+          }
+          
           // Verifica se a mesa está livre (sem pedidos locais)
           // Se estiver livre, não precisa ir no servidor porque já atualizamos localmente
           if (!Hive.isBoxOpen(PedidoLocalRepository.boxName)) {
@@ -480,7 +530,7 @@ class MesasProvider extends ChangeNotifier {
   }
 
   /// Atualiza mesas específicas do servidor
-  Future<void> _atualizarMesasDoServidor(List<String> mesaIds) async {
+  Future<void> _atualizarMesasDoServidor(List<String> mesaIds, {bool forcar = false}) async {
     final Map<String, MesaListItemDto> mesasAtualizadas = {};
     
     // Busca todas em paralelo
@@ -506,19 +556,74 @@ class MesasProvider extends ChangeNotifier {
     for (final entry in mesasAtualizadas.entries) {
       final index = _mesas.indexWhere((m) => m.id == entry.key);
       if (index != -1) {
+        final mesaAntiga = _mesas[index];
         _mesas[index] = entry.value;
         houveAtualizacao = true;
         
-        // Recalcula status completo após atualizar dados do servidor
-        // Isso garante que o status seja calculado corretamente com dados atualizados
-        _recalcularStatusMesa(entry.key);
+        debugPrint('🔄 [MesasProvider] Mesa ${entry.key} atualizada na lista:');
+        debugPrint('   Antes: ${mesaAntiga.numero} - Status: ${mesaAntiga.status}');
+        debugPrint('   Depois: ${entry.value.numero} - Status: ${entry.value.status}');
+        
+        // Se for transferência, limpa o cache de status calculado e usa status do servidor
+        // Isso evita que pedidos locais antigos (ainda no Hive) sobrescrevam o status correto
+        if (forcar) {
+          debugPrint('   🧹 Limpando cache de status calculado para usar status do servidor');
+          _statusCalculadoPorMesa.remove(entry.key);
+          
+          // Atualiza status calculado diretamente com o status do servidor
+          _statusCalculadoPorMesa[entry.key] = MesaStatusCalculado(
+            mesaId: entry.key,
+            statusVisual: entry.value.status.toLowerCase(),
+            pedidosPendentes: 0,
+            pedidosSincronizando: 0,
+            pedidosComErro: 0,
+            pedidosSincronizados: 0,
+            ultimaAtualizacao: DateTime.now(),
+            temPedidosRecemSincronizados: false,
+          );
+        } else {
+          // Recalcula status completo após atualizar dados do servidor
+          // Isso garante que o status seja calculado corretamente com dados atualizados
+          _recalcularStatusMesa(entry.key);
+        }
+      } else {
+        debugPrint('⚠️ [MesasProvider] Mesa ${entry.key} não encontrada na lista _mesas');
+        debugPrint('   IDs das mesas na lista: ${_mesas.map((m) => m.id).toList()}');
+        debugPrint('   Tentando adicionar mesa à lista...');
+        
+        // Se for transferência e mesa não está na lista, adiciona
+        if (forcar) {
+          _mesas.add(entry.value);
+          houveAtualizacao = true;
+          debugPrint('   ✅ Mesa ${entry.key} adicionada à lista');
+          
+          // Atualiza status calculado diretamente com o status do servidor
+          _statusCalculadoPorMesa[entry.key] = MesaStatusCalculado(
+            mesaId: entry.key,
+            statusVisual: entry.value.status.toLowerCase(),
+            pedidosPendentes: 0,
+            pedidosSincronizando: 0,
+            pedidosComErro: 0,
+            pedidosSincronizados: 0,
+            ultimaAtualizacao: DateTime.now(),
+            temPedidosRecemSincronizados: false,
+          );
+        }
       }
     }
     
     if (houveAtualizacao) {
       // Reaplica filtro e notifica listeners para atualizar UI
+      debugPrint('📢 [MesasProvider] Reaplicando filtro e notificando listeners...');
       filterMesas(''); 
       debugPrint('✅ [MesasProvider] Mesa(s) atualizada(s) do servidor e UI notificada');
+    } else if (forcar) {
+      // Se forçou atualização mas não encontrou mesas, ainda assim notifica
+      // para garantir que a UI seja atualizada
+      debugPrint('⚠️ [MesasProvider] Nenhuma mesa foi atualizada, mas forçando notificação');
+      notifyListeners();
+    } else {
+      debugPrint('ℹ️ [MesasProvider] Nenhuma atualização necessária');
     }
   }
 
