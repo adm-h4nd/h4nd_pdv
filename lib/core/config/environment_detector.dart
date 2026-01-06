@@ -24,7 +24,7 @@ class EnvironmentDetector {
   /// Obtém a URL do servidor baseado no ambiente
   static String getServerUrl() {
     // Sempre usa api-hml.h4nd.com.br (tanto para release quanto debug)
-    return 'https://api-hml.h4nd.com.br';
+      return 'https://api-hml.h4nd.com.br';
   }
   
   /// Obtém a URL da API (com /api)

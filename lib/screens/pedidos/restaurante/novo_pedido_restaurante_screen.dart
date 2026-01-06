@@ -490,30 +490,35 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
 
     // Tela cheia: usa Scaffold (mobile)
     // Intercepta o botão voltar do sistema quando há itens no pedido
+    // Mas NÃO intercepta quando for balcão (balcão não tem botão voltar)
     final pedidoProvider = Provider.of<PedidoProvider>(context, listen: false);
     final temItensNoPedido = !pedidoProvider.isEmpty;
+    final isBalcao = widget.tipoVenda == TipoVenda.balcao;
     
     return PopScope(
-      canPop: !temItensNoPedido, // Permite fechar se não tem itens, impede se tem
+      // Para balcão, sempre permite fechar (não intercepta)
+      // Para mesa/comanda, intercepta se tiver itens
+      canPop: isBalcao || !temItensNoPedido,
       onPopInvokedWithResult: (bool didPop, dynamic result) async {
         if (didPop) return; // Já foi fechado
         
         // Intercepta o botão voltar do sistema (Android/iOS) quando há itens
-        if (temItensNoPedido) {
+        // Mas apenas se NÃO for balcão
+        if (temItensNoPedido && !isBalcao) {
           await _handleVoltar();
         }
       },
       child: Scaffold(
-        backgroundColor: const Color(0xFFF8F9FA),
-        body: Column(
-          children: [
-            // Barra de ferramentas com título usando ElevatedToolbarContainer
-            _buildBarraFerramentasComTitulo(adaptive),
-            // Conteúdo principal
-            Expanded(
-              child: buildContent(),
-            ),
-          ],
+      backgroundColor: const Color(0xFFF8F9FA),
+      body: Column(
+        children: [
+          // Barra de ferramentas com título usando ElevatedToolbarContainer
+          _buildBarraFerramentasComTitulo(adaptive),
+          // Conteúdo principal
+          Expanded(
+            child: buildContent(),
+          ),
+        ],
         ),
       ),
     );
@@ -525,6 +530,8 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
     
     // Verifica se foi chamado de mesa/comanda (tem mesaId ou comandaId)
     final foiChamadoDeMesaOuComanda = widget.mesaId != null || widget.comandaId != null;
+    // Verifica se é balcão - balcão não deve ter botão de voltar
+    final isBalcao = widget.tipoVenda == TipoVenda.balcao;
     
     return ElevatedToolbarContainer(
       padding: EdgeInsets.symmetric(
@@ -533,8 +540,9 @@ class _NovoPedidoRestauranteScreenState extends State<NovoPedidoRestauranteScree
       ),
       child: Row(
         children: [
-          // Botão voltar: sempre mostra quando foi chamado de mesa/comanda, ou apenas mobile
-          if (foiChamadoDeMesaOuComanda || adaptive.isMobile) ...[
+          // Botão voltar: mostra quando foi chamado de mesa/comanda, mas NÃO mostra para balcão
+          // Em mobile, também mostra se não for balcão
+          if ((foiChamadoDeMesaOuComanda || adaptive.isMobile) && !isBalcao) ...[
             _buildBackButton(adaptive),
             const SizedBox(width: 8),
           ],

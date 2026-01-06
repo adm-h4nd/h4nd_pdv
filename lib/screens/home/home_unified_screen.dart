@@ -16,7 +16,10 @@ import '../../data/repositories/pedido_local_repository.dart';
 import '../../data/models/local/pedido_local.dart';
 import '../../data/models/local/sync_status_pedido.dart';
 import '../sync/sync_dialog.dart';
+import '../sync/local_api_sync_dialog.dart';
 import '../pedidos/pedidos_sync_screen.dart';
+import '../../data/services/sync/local_api_sync_service.dart';
+import 'package:dio/dio.dart';
 import '../mesas_comandas/mesas_comandas_screen.dart';
 import '../mesas_comandas/mesas_comandas_screen.dart' show TipoVisualizacao;
 import '../pedidos/restaurante/novo_pedido_restaurante_screen.dart';
@@ -286,16 +289,92 @@ class _HomeUnifiedScreenState extends State<HomeUnifiedScreen> {
     }
   }
 
-  // TODO: Implementar sincronização com API local quando necessário
+  /// Mostra dialog de sincronização com a API local (servidor local → cloud)
   Future<void> _mostrarDialogSincronizacaoApiLocal() async {
-    // Funcionalidade não implementada ainda
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Funcionalidade de sincronização com API local ainda não implementada'),
-          duration: Duration(seconds: 3),
+    if (!mounted) return;
+
+    // Verificar se está configurado como servidor local
+    final config = ConnectionConfigService.getCurrentConfig();
+    if (config == null || !config.isLocal) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Esta funcionalidade só está disponível quando conectado ao servidor local'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      return;
+    }
+
+    // Criar Dio sem interceptors de autenticação (endpoint é AllowAnonymous)
+    final dio = Dio(
+      BaseOptions(
+        connectTimeout: const Duration(minutes: 10),
+        receiveTimeout: const Duration(minutes: 10),
+        sendTimeout: const Duration(minutes: 10),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      ),
+    );
+
+    // Criar serviço de sincronização
+    final syncService = LocalApiSyncService(dio: dio);
+
+    // Mostrar dialog de confirmação primeiro
+    final confirmado = await AppDialog.showConfirm(
+      context: context,
+      title: 'Sincronizar Servidor',
+      message: 'Esta ação irá sincronizar os dados do servidor local com o servidor cloud.\n\n'
+          'Deseja continuar?',
+      confirmText: 'Sincronizar',
+      cancelText: 'Cancelar',
+      icon: Icons.cloud_sync,
+      iconColor: const Color(0xFF10B981),
+      confirmColor: const Color(0xFF10B981),
+    );
+
+    // Se o usuário confirmou, inicia a sincronização
+    if (confirmado == true && mounted) {
+      // Perguntar se quer sincronização completa ou incremental
+      final tipoSync = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Tipo de Sincronização'),
+          content: const Text(
+            'Escolha o tipo de sincronização:\n\n'
+            '• Incremental: Sincroniza apenas alterações desde a última sincronização (mais rápido)\n\n'
+            '• Completa: Sincroniza todos os dados (mais lento)',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true), // true = incremental
+              child: const Text('Incremental'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false), // false = completa
+              child: const Text('Completa'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(null),
+              child: const Text('Cancelar'),
+            ),
+          ],
         ),
       );
+
+      if (tipoSync != null && mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => LocalApiSyncDialog(
+            syncService: syncService,
+            isIncremental: tipoSync,
+          ),
+        );
+      }
     }
   }
 

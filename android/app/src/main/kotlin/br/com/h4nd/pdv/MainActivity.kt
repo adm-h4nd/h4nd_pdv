@@ -1,4 +1,4 @@
-package com.example.mx_cloud_pdv
+package br.com.h4nd.pdv
 
 import android.os.Bundle
 import androidx.annotation.Keep
@@ -9,7 +9,7 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         // Aplica o tema LaunchTheme antes do Flutter inicializar
         // Isso garante que a splash customizada apareça imediatamente
-        setTheme(com.example.mx_cloud_pdv.R.style.LaunchTheme)
+        setTheme(br.com.h4nd.pdv.R.style.LaunchTheme)
         super.onCreate(savedInstanceState)
     }
     
@@ -19,3 +19,4 @@ class MainActivity : FlutterActivity() {
         super.onStart()
     }
 }
+

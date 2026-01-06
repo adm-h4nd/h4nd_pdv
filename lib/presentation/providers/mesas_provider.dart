@@ -584,7 +584,7 @@ class MesasProvider extends ChangeNotifier {
         } else {
           // Recalcula status completo após atualizar dados do servidor
           // Isso garante que o status seja calculado corretamente com dados atualizados
-          _recalcularStatusMesa(entry.key);
+        _recalcularStatusMesa(entry.key);
         }
       } else {
         debugPrint('⚠️ [MesasProvider] Mesa ${entry.key} não encontrada na lista _mesas');

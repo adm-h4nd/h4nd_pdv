@@ -401,20 +401,20 @@ class _HomeNavigationState extends State<HomeNavigation> {
                 // Conteúdo das telas
                 Expanded(
                   child: IndexedStack(
-                    index: _currentIndex,
-                    children: navigationItems.asMap().entries.map((entry) {
-                      final index = entry.key;
-                      final item = entry.value;
-                      // Passa o notifier para BalcaoScreen se for a tela balcão
-                      if (item.screen is BalcaoScreen) {
-                        return BalcaoScreen(
-                          hideAppBar: (item.screen as BalcaoScreen).hideAppBar,
-                          navigationIndexNotifier: _navigationIndexNotifier,
-                          screenIndex: index,
-                        );
-                      }
-                      return item.screen;
-                    }).toList(),
+            index: _currentIndex,
+            children: navigationItems.asMap().entries.map((entry) {
+              final index = entry.key;
+              final item = entry.value;
+              // Passa o notifier para BalcaoScreen se for a tela balcão
+              if (item.screen is BalcaoScreen) {
+                return BalcaoScreen(
+                  hideAppBar: (item.screen as BalcaoScreen).hideAppBar,
+                  navigationIndexNotifier: _navigationIndexNotifier,
+                  screenIndex: index,
+                );
+              }
+              return item.screen;
+            }).toList(),
                   ),
                 ),
               ],

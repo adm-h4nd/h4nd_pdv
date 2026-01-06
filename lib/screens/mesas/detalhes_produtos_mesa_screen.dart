@@ -261,9 +261,9 @@ class _DetalhesProdutosMesaScreenState extends State<DetalhesProdutosMesaScreen>
                               comandaIdPreSelecionada = vendaAtual.comandaId;
                             } else {
                               // Se não há venda atual ou venda não tem comanda, verifica se a aba selecionada é uma comanda
-                              if (_provider.abaSelecionada != null && 
-                                  _provider.abaSelecionada != MesaDetalhesProvider.semComandaId) {
-                                comandaIdPreSelecionada = _provider.abaSelecionada;
+                            if (_provider.abaSelecionada != null && 
+                                _provider.abaSelecionada != MesaDetalhesProvider.semComandaId) {
+                              comandaIdPreSelecionada = _provider.abaSelecionada;
                               }
                             }
                             

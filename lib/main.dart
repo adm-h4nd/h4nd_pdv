@@ -113,7 +113,7 @@ Future<void> initializeApp() async {
       debugPrint('⚙️ [INIT] Servidor não configurado, abrindo tela de configuração...');
       runApp(
         MaterialApp(
-          title: 'MX Cloud PDV',
+          title: 'H4ND PDV',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.lightTheme,
           darkTheme: AppTheme.darkTheme,
@@ -216,7 +216,7 @@ class MXCloudPDVApp extends StatelessWidget {
       ],
       child: MaterialApp(
         navigatorKey: navigatorKey, // NavigatorKey global para dialogs
-        title: 'MX Cloud PDV',
+        title: 'H4ND PDV',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme,
         darkTheme: AppTheme.darkTheme,

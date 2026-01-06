@@ -28,7 +28,7 @@ bool FlutterWindow::OnCreate() {
   // Registra plugins com tratamento de erro
   // Alguns plugins podem não ter suporte Windows (ex: stone_payments)
   try {
-    RegisterPlugins(flutter_controller_->engine());
+  RegisterPlugins(flutter_controller_->engine());
   } catch (...) {
     // Ignora erros ao registrar plugins que não têm suporte Windows
     // O app continuará funcionando sem esses plugins

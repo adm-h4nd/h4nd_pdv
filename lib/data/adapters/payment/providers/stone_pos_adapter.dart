@@ -81,7 +81,7 @@ class StonePOSAdapter implements PaymentProvider {
   /// Ativa a máquina Stone (chamado uma vez no início do app)
   Future<void> _activateStone() async {
     try {
-      final appName = _settings?['appName'] as String? ?? 'MX Cloud PDV';
+      final appName = _settings?['appName'] as String? ?? 'H4ND PDV';
       final stoneCode = _settings?['stoneCode'] as String? ?? '';
       
       if (stoneCode.isEmpty) {

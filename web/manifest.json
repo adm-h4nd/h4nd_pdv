@@ -1,11 +1,11 @@
 {
-    "name": "mx_cloud_pdv",
-    "short_name": "mx_cloud_pdv",
+    "name": "H4ND PDV",
+    "short_name": "H4ND PDV",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "H4ND PDV - Sistema PDV Multi-segmento",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

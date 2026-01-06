@@ -12,9 +12,9 @@
 -keepnames class * { *; }
 
 # Preserva MainActivity e ciclo de vida (CRÍTICO - deve vir primeiro!)
--keep class com.example.mx_cloud_pdv.MainActivity { *; }
+-keep class br.com.h4nd.pdv.MainActivity { *; }
 -keep class io.flutter.embedding.android.FlutterActivity { *; }
--keepclassmembers class com.example.mx_cloud_pdv.MainActivity { *; }
+-keepclassmembers class br.com.h4nd.pdv.MainActivity { *; }
 -keepclassmembers class io.flutter.embedding.android.FlutterActivity { *; }
 
 # Preserva TODOS os adapters do Hive (CRÍTICO - deve vir antes de otimizações!)
@@ -23,10 +23,10 @@
 -keep @com.ryanharter.hive.typeadapters.TypeAdapter class * { *; }
 
 # Preserva TODOS os adapters específicos do projeto (CRÍTICO!)
--keep class com.example.mx_cloud_pdv.data.models.local.**Adapter { *; }
--keep class com.example.mx_cloud_pdv.data.models.home.**Adapter { *; }
--keep class com.example.mx_cloud_pdv.data.models.local.**Local { *; }
--keep class com.example.mx_cloud_pdv.data.models.home.** { *; }
+-keep class br.com.h4nd.pdv.data.models.local.**Adapter { *; }
+-keep class br.com.h4nd.pdv.data.models.home.**Adapter { *; }
+-keep class br.com.h4nd.pdv.data.models.local.**Local { *; }
+-keep class br.com.h4nd.pdv.data.models.home.** { *; }
 
 # Preserva classes com @HiveType
 -keep @hive.HiveType class * { *; }
@@ -39,14 +39,14 @@
 }
 
 # Preserva o pacote completo de models local
--keep class com.example.mx_cloud_pdv.data.models.local.** { *; }
+-keep class br.com.h4nd.pdv.data.models.local.** { *; }
 
 # Preserva nomes das classes (importante para reflexão do Hive)
--keepnames class com.example.mx_cloud_pdv.data.models.local.** { *; }
--keepnames class com.example.mx_cloud_pdv.data.models.home.** { *; }
+-keepnames class br.com.h4nd.pdv.data.models.local.** { *; }
+-keepnames class br.com.h4nd.pdv.data.models.home.** { *; }
 
 # Preserva construtores dos adapters (necessários para instanciação)
--keepclassmembers class com.example.mx_cloud_pdv.data.models.local.**Adapter {
+-keepclassmembers class br.com.h4nd.pdv.data.models.local.**Adapter {
     <init>();
 }
 

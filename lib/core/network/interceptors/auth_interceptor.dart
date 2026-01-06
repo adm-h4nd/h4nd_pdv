@@ -1,8 +1,11 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import '../../../data/services/core/auth_service.dart';
 import '../../../main.dart';
 import '../../../core/widgets/app_dialog.dart';
+import '../../../core/adaptive_layout/adaptive_layout.dart';
+import '../../../presentation/screens/auth/login_screen.dart';
 
 /// Interceptor para adicionar token de autenticação nas requisições
 class AuthInterceptor extends Interceptor {
@@ -12,36 +15,100 @@ class AuthInterceptor extends Interceptor {
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) async {
+    debugPrint('🔵 AuthInterceptor.onRequest: ${options.method} ${options.path}');
+    
+    // Ignora endpoints de autenticação (não precisam de token)
+    if (_isAuthEndpoint(options.path)) {
+      debugPrint('   ⏭️ Ignorando endpoint de auth (não precisa token)');
+      handler.next(options);
+      return;
+    }
+    
     // Obtém o token atual do AuthService compartilhado
     final token = await _authService.getToken();
     
     if (token != null && token.isNotEmpty) {
       // Adiciona o token no header Authorization
       options.headers['Authorization'] = 'Bearer $token';
+      debugPrint('   ✅ Token adicionado ao header');
       
       // Obtém a empresa selecionada e adiciona no header X-Company-Id
       final selectedEmpresa = await _authService.getSelectedEmpresa();
       if (selectedEmpresa != null && selectedEmpresa.isNotEmpty) {
         options.headers['X-Company-Id'] = selectedEmpresa;
+        debugPrint('   ✅ X-Company-Id adicionado: $selectedEmpresa');
       }
     } else {
       // Log para debug se não houver token
-      debugPrint('AuthInterceptor: Token não encontrado para requisição ${options.path}');
+      debugPrint('   ⚠️ Token não encontrado para requisição ${options.path}');
     }
     
     handler.next(options);
   }
+  
+  /// Verifica se o endpoint é de autenticação (não precisa de token)
+  bool _isAuthEndpoint(String path) {
+    return path.contains('/auth/login') ||
+           path.contains('/auth/refresh') ||
+           path.contains('/auth/revoke') ||
+           path.contains('/auth/validate') ||
+           path.contains('/auth/health');
+  }
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) async {
-    debugPrint('🔍 AuthInterceptor.onError: Status=${err.response?.statusCode}, Path=${err.requestOptions.path}');
+    final statusCode = err.response?.statusCode;
+    final path = err.requestOptions.path;
+    
+    debugPrint('🔍 AuthInterceptor.onError: Status=$statusCode, Path=$path');
+    debugPrint('   Error type: ${err.type}');
+    debugPrint('   Error message: ${err.message}');
+    debugPrint('   Response data: ${err.response?.data}');
+    
+    // Verifica se tem response e status code
+    if (err.response == null) {
+      debugPrint('   ⚠️ Sem response, propagando erro normalmente');
+      handler.next(err);
+      return;
+    }
+    
+    // Se for endpoint de refresh e retornar 401, não tenta fazer refresh novamente (evita loop)
+    if (_isAuthEndpoint(path) && statusCode == 401) {
+      debugPrint('⚠️ AuthInterceptor: Endpoint de auth retornou 401, não tentando refresh (evita loop)');
+      handler.next(err);
+      return;
+    }
     
     // Se receber 401 (Unauthorized), SEMPRE tenta renovar o token primeiro
-    if (err.response?.statusCode == 401) {
+    if (statusCode == 401) {
       debugPrint('🚨 AuthInterceptor: Recebeu 401 (Unauthorized)');
       debugPrint('   Path: ${err.requestOptions.path}');
       debugPrint('   Method: ${err.requestOptions.method}');
-      debugPrint('   Tentando refresh token...');
+      
+      // Verifica se tem refresh token antes de tentar renovar
+      final refreshToken = await _authService.getRefreshToken();
+      debugPrint('   🔍 Verificando refresh token...');
+      debugPrint('   Refresh token é null: ${refreshToken == null}');
+      debugPrint('   Refresh token está vazio: ${refreshToken?.isEmpty ?? true}');
+      if (refreshToken != null && refreshToken.isNotEmpty) {
+        debugPrint('   Refresh token length: ${refreshToken.length}');
+        debugPrint('   Refresh token preview: ${refreshToken.substring(0, refreshToken.length > 30 ? 30 : refreshToken.length)}...');
+      }
+      
+      if (refreshToken == null || refreshToken.isEmpty) {
+        debugPrint('   ⚠️ Não há refresh token disponível, fazendo logout...');
+        await _handleLogout();
+        final loginError = DioException(
+          requestOptions: err.requestOptions,
+          response: err.response,
+          type: DioExceptionType.badResponse,
+          error: 'Sessão expirada. Faça login novamente.',
+        );
+        handler.next(loginError);
+        return;
+      }
+      
+      debugPrint('   ✅ Refresh token encontrado, tentando renovar...');
       
       try {
         // Tenta renovar o token (sempre tenta, mesmo que pareça válido)
@@ -179,14 +246,82 @@ class AuthInterceptor extends Interceptor {
     }
   }
   
-  /// Faz logout (a navegação será tratada pelo AuthProvider ou pela tela que detectar o logout)
+  /// Faz logout e navega para tela de login
   Future<void> _handleLogout() async {
     try {
       await _authService.logout();
-      debugPrint('AuthInterceptor: Logout realizado com sucesso');
-      // A navegação para login será tratada pelo sistema quando detectar que não há mais usuário autenticado
-    } catch (e) {
-      debugPrint('AuthInterceptor: Erro ao fazer logout: $e');
+      debugPrint('✅ AuthInterceptor: Logout realizado com sucesso');
+      
+      // Aguarda um frame para garantir que o estado foi atualizado
+      await Future.delayed(const Duration(milliseconds: 100));
+      
+      // Navega para tela de login usando navigatorKey global
+      // Usa addPostFrameCallback para garantir que a navegação aconteça após o frame atual
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final navigator = navigatorKey.currentState;
+        debugPrint('🔍 AuthInterceptor: Verificando navigator...');
+        debugPrint('   navigatorKey.currentContext: ${navigatorKey.currentContext}');
+        debugPrint('   navigatorKey.currentState: $navigator');
+        
+        if (navigator != null) {
+          debugPrint('   ✅ Navigator disponível, navegando para tela de login...');
+          try {
+            navigator.pushAndRemoveUntil(
+              MaterialPageRoute(
+                builder: (context) => const AdaptiveLayout(
+                  child: LoginScreen(),
+                ),
+              ),
+              (route) => false, // Remove todas as rotas anteriores
+            );
+            debugPrint('✅ AuthInterceptor: Navegação para login concluída');
+          } catch (navError) {
+            debugPrint('❌ AuthInterceptor: Erro ao navegar: $navError');
+            // Tenta novamente após um pequeno delay
+            Future.delayed(const Duration(milliseconds: 500), () {
+              final retryNavigator = navigatorKey.currentState;
+              if (retryNavigator != null) {
+                debugPrint('   🔄 Tentando navegação novamente...');
+                retryNavigator.pushAndRemoveUntil(
+                  MaterialPageRoute(
+                    builder: (context) => const AdaptiveLayout(
+                      child: LoginScreen(),
+                    ),
+                  ),
+                  (route) => false,
+                );
+                debugPrint('✅ AuthInterceptor: Navegação concluída na segunda tentativa');
+              } else {
+                debugPrint('❌ AuthInterceptor: Navigator ainda não disponível na segunda tentativa');
+              }
+            });
+          }
+        } else {
+          debugPrint('⚠️ AuthInterceptor: Navigator não disponível para navegar para login');
+          debugPrint('   Tentando novamente após delay...');
+          // Tenta novamente após um delay maior
+          Future.delayed(const Duration(milliseconds: 500), () {
+            final retryNavigator = navigatorKey.currentState;
+            if (retryNavigator != null) {
+              debugPrint('   ✅ Navigator disponível na segunda tentativa, navegando...');
+              retryNavigator.pushAndRemoveUntil(
+                MaterialPageRoute(
+                  builder: (context) => const AdaptiveLayout(
+                    child: LoginScreen(),
+                  ),
+                ),
+                (route) => false,
+              );
+              debugPrint('✅ AuthInterceptor: Navegação concluída na segunda tentativa');
+            } else {
+              debugPrint('❌ AuthInterceptor: Navigator ainda não disponível após delay');
+            }
+          });
+        }
+      });
+    } catch (e, stackTrace) {
+      debugPrint('❌ AuthInterceptor: Erro ao fazer logout: $e');
+      debugPrint('   StackTrace: $stackTrace');
     }
   }
   

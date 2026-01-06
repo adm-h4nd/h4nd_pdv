@@ -84,7 +84,7 @@ class StoneThermalAdapter implements PrintProvider {
   /// Retorna true se ativado com sucesso, false se já estava ativado ou erro não crítico
   Future<bool> _activateStone() async {
     try {
-      final appName = _settings?['appName'] as String? ?? 'MX Cloud PDV';
+      final appName = _settings?['appName'] as String? ?? 'H4ND PDV';
       final stoneCode = _settings?['stoneCode'] as String? ?? '';
       
       if (stoneCode.isEmpty) {

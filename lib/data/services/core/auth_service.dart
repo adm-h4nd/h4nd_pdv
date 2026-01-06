@@ -36,6 +36,11 @@ class AuthService {
             baseUrl: config.apiUrl,
             connectTimeout: config.requestTimeout,
             receiveTimeout: config.requestTimeout,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              // NÃO adiciona Authorization aqui - será adicionado apenas pelo interceptor quando necessário
+            },
           ),
         ) {
     // Cria o ApiClient com o AuthInterceptor
@@ -143,14 +148,62 @@ class AuthService {
     }
 
     _isRefreshing = true;
-    debugPrint('AuthService: Iniciando refresh token...');
+    debugPrint('🔄 AuthService: Iniciando refresh token...');
+    debugPrint('   Refresh token length: ${refreshTokenValue.length}');
+    debugPrint('   Refresh token preview: ${refreshTokenValue.substring(0, refreshTokenValue.length > 20 ? 20 : refreshTokenValue.length)}...');
 
     try {
       final request = RefreshTokenRequest(refreshToken: refreshTokenValue);
+      final requestJson = request.toJson();
+      debugPrint('   📤 Preparando requisição de refresh...');
+      debugPrint('   Request JSON: $requestJson');
+      debugPrint('   Endpoint: ${ApiEndpoints.refresh}');
+      debugPrint('   Base URL do Dio: ${_dio.options.baseUrl}');
+      debugPrint('   URL completa: ${_dio.options.baseUrl}${ApiEndpoints.refresh}');
+      
+      // Verifica se o Dio tem interceptors que podem interferir
+      debugPrint('   Interceptors no Dio: ${_dio.interceptors.length}');
+      
+      // O endpoint /auth/refresh não requer autenticação, MAS o backend pode precisar
+      // do token atual (mesmo que expirado) para extrair informações do TenantMiddleware
+      // Vamos enviar o token atual se existir, mesmo que esteja expirado
+      final currentToken = await getToken();
+      final selectedEmpresa = await getSelectedEmpresa();
+      
+      final headers = <String, dynamic>{
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      };
+      
+      // Adiciona o token atual se existir (mesmo que expirado)
+      // O backend pode precisar dele para extrair TenantId no TenantMiddleware
+      if (currentToken != null && currentToken.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $currentToken';
+        debugPrint('   ✅ Token atual adicionado ao header (mesmo que expirado)');
+      } else {
+        debugPrint('   ⚠️ Token atual não encontrado');
+      }
+      
+      // Adiciona X-Company-Id se existir
+      if (selectedEmpresa != null && selectedEmpresa.isNotEmpty) {
+        headers['X-Company-Id'] = selectedEmpresa;
+        debugPrint('   ✅ X-Company-Id adicionado: $selectedEmpresa');
+      }
+      
+      final options = Options(headers: headers);
+      
+      debugPrint('   📋 Headers que serão enviados: ${options.headers}');
+      debugPrint('   📋 Body completo que será enviado: ${jsonEncode(requestJson)}');
+      
       final response = await _dio.post<Map<String, dynamic>>(
         ApiEndpoints.refresh,
-        data: request.toJson(),
+        data: requestJson,
+        options: options,
       );
+
+      debugPrint('   ✅ Resposta recebida do servidor');
+      debugPrint('   Response status: ${response.statusCode}');
+      debugPrint('   Response data: ${response.data}');
 
       final refreshResponse = RefreshTokenResponse.fromJson(response.data!);
 
@@ -163,16 +216,72 @@ class AuthService {
         // Atualiza dados do usuário do novo token
         await _updateUserFromToken(refreshResponse.data.token);
         _isRefreshing = false;
-        debugPrint('AuthService: Token renovado com sucesso');
+        debugPrint('✅ AuthService: Token renovado com sucesso');
         return true;
       }
 
       _isRefreshing = false;
-      debugPrint('AuthService: Falha ao renovar token - resposta não sucedida');
+      debugPrint('❌ AuthService: Falha ao renovar token - resposta não sucedida');
+      debugPrint('   Message: ${refreshResponse.message}');
+      debugPrint('   Errors: ${refreshResponse.errors}');
       return false;
-    } catch (e) {
+    } on DioException catch (e) {
       _isRefreshing = false;
-      debugPrint('AuthService: Erro ao renovar token: $e');
+      debugPrint('❌ AuthService: Erro DioException ao renovar token');
+      debugPrint('   Error type: ${e.type}');
+      debugPrint('   Status: ${e.response?.statusCode}');
+      debugPrint('   Message: ${e.message}');
+      debugPrint('   Request path: ${e.requestOptions.path}');
+      debugPrint('   Request method: ${e.requestOptions.method}');
+      debugPrint('   Request data: ${e.requestOptions.data}');
+      debugPrint('   Request headers: ${e.requestOptions.headers}');
+      debugPrint('   Response data: ${e.response?.data}');
+      debugPrint('   Response headers: ${e.response?.headers}');
+      
+      // Se for erro de resposta, tenta extrair mensagem
+      if (e.response?.data != null) {
+        try {
+          final data = e.response!.data;
+          debugPrint('   📋 Tipo do response.data: ${data.runtimeType}');
+          
+          if (data is Map<String, dynamic>) {
+            final message = data['message'] ?? 'Erro desconhecido';
+            final errors = data['errors'] ?? [];
+            final success = data['success'];
+            debugPrint('   📋 Response data (Map):');
+            debugPrint('      success: $success');
+            debugPrint('      message: $message');
+            debugPrint('      errors: $errors');
+            
+            // Se a mensagem for "Usuário não encontrado ou inativo", pode ser que:
+            // 1. O refresh token está associado a um usuário que foi desativado
+            // 2. O refresh token está expirado
+            // 3. O refresh token foi revogado
+            if (message.toString().contains('não encontrado') || 
+                message.toString().contains('inativo')) {
+              debugPrint('   ⚠️ ATENÇÃO: Usuário não encontrado ou inativo!');
+              debugPrint('      Isso pode significar:');
+              debugPrint('      1. O refresh token está expirado');
+              debugPrint('      2. O usuário foi desativado no servidor');
+              debugPrint('      3. O refresh token foi revogado');
+              debugPrint('      4. O refresh token não existe mais no banco de dados');
+            }
+          } else {
+            debugPrint('   📋 Response data (outro tipo): $data');
+          }
+        } catch (parseError) {
+          debugPrint('   ❌ Erro ao parsear resposta: $parseError');
+        }
+      } else {
+        debugPrint('   ⚠️ Response data é null - pode ser erro de rede ou timeout');
+      }
+      
+      // Não faz logout aqui, deixa o interceptor decidir
+      return false;
+    } catch (e, stackTrace) {
+      _isRefreshing = false;
+      debugPrint('❌ AuthService: Erro genérico ao renovar token: $e');
+      debugPrint('   StackTrace: $stackTrace');
       // Não faz logout aqui, deixa o interceptor decidir
       return false;
     }

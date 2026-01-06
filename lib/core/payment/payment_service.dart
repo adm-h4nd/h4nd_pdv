@@ -29,7 +29,7 @@ class PaymentService {
     // Registra providers baseado na configuração
     // No Windows, alguns providers podem não estar disponíveis
     try {
-      await PaymentProviderRegistry.registerAll(_config!);
+    await PaymentProviderRegistry.registerAll(_config!);
     } catch (e, stackTrace) {
       debugPrint('⚠️ Erro ao registrar payment providers: $e');
       debugPrint('📚 Stack trace: $stackTrace');

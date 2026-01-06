@@ -26,7 +26,7 @@
   "providerSettings": {
     "stone_thermal": {
       "model": "P2",
-      "appName": "MX Cloud PDV",
+      "appName": "H4ND PDV",
       "stoneCode": "206192723"
     },
     "stone_p2_deeplink": {

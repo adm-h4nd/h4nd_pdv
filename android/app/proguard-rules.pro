@@ -28,14 +28,14 @@
 -keep class * implements com.ryanharter.hive.typeadapters.TypeAdapter { *; }
 
 # Preserva adapters específicos do projeto
--keep class com.example.mx_cloud_pdv.data.models.local.**Adapter { *; }
--keep class com.example.mx_cloud_pdv.data.models.home.**Adapter { *; }
--keep class com.example.mx_cloud_pdv.data.models.local.**Local { *; }
--keep class com.example.mx_cloud_pdv.data.models.home.** { *; }
+-keep class br.com.h4nd.pdv.data.models.local.**Adapter { *; }
+-keep class br.com.h4nd.pdv.data.models.home.**Adapter { *; }
+-keep class br.com.h4nd.pdv.data.models.local.**Local { *; }
+-keep class br.com.h4nd.pdv.data.models.home.** { *; }
 
 # Preserva nomes das classes (importante para reflexão)
--keepnames class com.example.mx_cloud_pdv.data.models.local.** { *; }
--keepnames class com.example.mx_cloud_pdv.data.models.home.** { *; }
+-keepnames class br.com.h4nd.pdv.data.models.local.** { *; }
+-keepnames class br.com.h4nd.pdv.data.models.home.** { *; }
 
 # Regras específicas para flavor mobile (aplicadas via build.gradle.kts)
 # As classes do SDK Stone serão ignoradas no flavor mobile

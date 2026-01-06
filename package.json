@@ -1,0 +1,13 @@
+{
+  "name": "h4nd-pdv-icons",
+  "version": "1.0.0",
+  "description": "Scripts para gerar ícones do app Flutter",
+  "scripts": {
+    "generate-icons": "node scripts/generate-app-icons.js"
+  },
+  "devDependencies": {
+    "sharp": "^0.33.0",
+    "to-ico": "^1.1.7"
+  }
+}
+

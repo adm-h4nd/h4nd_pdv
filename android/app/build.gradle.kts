@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.mx_cloud_pdv"
+    namespace = "br.com.h4nd.pdv"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -21,7 +21,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.mx_cloud_pdv"
+        applicationId = "br.com.h4nd.pdv"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
@@ -36,13 +36,13 @@ android {
         create("mobile") {
             dimension = "device"
             applicationIdSuffix = ".mobile"
-            resValue("string", "app_name", "MX Cloud PDV Mobile")
+            resValue("string", "app_name", "H4ND PDV")
         }
         
         create("stoneP2") {
             dimension = "device"
             applicationIdSuffix = ".stone.p2"
-            resValue("string", "app_name", "MX Cloud PDV Stone P2")
+            resValue("string", "app_name", "H4ND PDV")
         }
     }
 

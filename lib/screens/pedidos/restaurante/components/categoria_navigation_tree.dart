@@ -459,7 +459,7 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
                     if (!_isSearching && _categoriasRaiz.isNotEmpty) ...[
                       SizedBox(height: adaptive.isMobile ? 6 : 8),
                       SizedBox(
-                        height: adaptive.isMobile ? 62 : 70,
+                        height: adaptive.isMobile ? 72 : 80,
                         child: ListView.builder(
                           scrollDirection: Axis.horizontal,
                           padding: EdgeInsets.symmetric(horizontal: adaptive.isMobile ? 0 : 2),
@@ -1547,9 +1547,11 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
     required Color categoriaColor,
     required VoidCallback onTap,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeInOutCubic,
         width: 96,
@@ -1587,81 +1589,64 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(12),
-          child: Stack(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              // Imagem de fundo ou gradiente
-              if (imageUrl != null)
-                Positioned.fill(
-                  child: ColorFiltered(
-                    colorFilter: ColorFilter.mode(
-                      isSelected 
-                          ? const Color(0xFF10B981).withOpacity(0.15)
-                          : Colors.black.withOpacity(0.05),
-                      BlendMode.overlay,
-                    ),
-                    child: Image.network(
-                      imageUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return _buildGradientBackground(categoriaColor);
-                      },
-                      loadingBuilder: (context, child, loadingProgress) {
-                        if (loadingProgress == null) return child;
-                        return _buildGradientBackground(categoriaColor);
-                      },
-                    ),
-                  ),
-                )
-              else
-                _buildGradientBackground(categoriaColor),
-              
-              // Overlay gradiente mais sutil e integrado
-              Positioned.fill(
-                child: Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.transparent,
-                        isSelected
-                            ? const Color(0xFF10B981).withOpacity(0.25)
-                            : Colors.black.withOpacity(0.35),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              
-              // Barra superior verde quando selecionado
-              if (isSelected)
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: 3,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          const Color(0xFF10B981),
-                          const Color(0xFF10B981).withOpacity(0.7),
-                        ],
+              // Área da imagem (parte superior)
+              Expanded(
+                child: Stack(
+                  children: [
+                    // Imagem de fundo ou gradiente
+                    if (imageUrl != null)
+                      Positioned.fill(
+                        child: ColorFiltered(
+                          colorFilter: ColorFilter.mode(
+                            isSelected 
+                                ? const Color(0xFF10B981).withOpacity(0.15)
+                                : Colors.black.withOpacity(0.05),
+                            BlendMode.overlay,
+                          ),
+                          child: Image.network(
+                            imageUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return _buildGradientBackground(categoriaColor);
+                            },
+                            loadingBuilder: (context, child, loadingProgress) {
+                              if (loadingProgress == null) return child;
+                              return _buildGradientBackground(categoriaColor);
+                            },
+                          ),
+                        ),
+                      )
+                    else
+                      _buildGradientBackground(categoriaColor),
+                    
+                    // Barra superior verde quando selecionado
+                    if (isSelected)
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: 3,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                const Color(0xFF10B981),
+                                const Color(0xFF10B981).withOpacity(0.7),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                ),
-              
-              // Conteúdo
-              Positioned.fill(
-                child: Padding(
-                  padding: const EdgeInsets.all(7),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Ícone ou indicador de seleção
-                      Row(
+                    
+                    // Ícone ou indicador de seleção (no canto superior)
+                    Positioned(
+                      top: 6,
+                      left: 6,
+                      right: 6,
+                      child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           if (categoria.icone != null && categoria.icone!.isNotEmpty)
@@ -1685,7 +1670,7 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
                               ),
                             )
                           else
-                            const SizedBox(width: 28),
+                            const SizedBox.shrink(),
                           if (isSelected)
                             Container(
                               padding: const EdgeInsets.all(5),
@@ -1708,57 +1693,87 @@ class _CategoriaNavigationTreeState extends State<CategoriaNavigationTree> {
                             ),
                         ],
                       ),
-                      
-                      // Nome da categoria
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            categoria.nome,
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 11.5,
-                              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-                              color: Colors.white,
-                              letterSpacing: -0.2,
-                              shadows: [
-                                Shadow(
-                                  color: Colors.black.withOpacity(0.6),
-                                  offset: const Offset(0, 1),
-                                  blurRadius: 3,
+                    ),
+                  ],
+                ),
+              ),
+              
+              // Área de texto com fundo semi-transparente (parte inferior) - permite ver a foto ao fundo
+              Container(
+                width: double.infinity,
+                height: 26,
+                child: Stack(
+                  children: [
+                    // Imagem de fundo (continuação da imagem principal) - permite ver a foto
+                    // Preenche altura completamente, mantém proporção, pode cortar nas laterais
+                    Positioned.fill(
+                      child: ClipRRect(
+                        borderRadius: const BorderRadius.only(
+                          bottomLeft: Radius.circular(12),
+                          bottomRight: Radius.circular(12),
+                        ),
+                        child: imageUrl != null
+                            ? FittedBox(
+                                fit: BoxFit.fitHeight, // Preenche altura, mantém proporção
+                                alignment: Alignment.bottomCenter,
+                                child: Image.network(
+                                  imageUrl,
+                                  fit: BoxFit.cover,
+                                  alignment: Alignment.bottomCenter,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    return Container(color: categoriaColor);
+                                  },
                                 ),
-                              ],
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          if (categoria.quantidadeProdutos > 0) ...[
-                            const SizedBox(height: 3),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(isSelected ? 0.25 : 0.2),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                '${categoria.quantidadeProdutos}',
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                  letterSpacing: 0.2,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
+                              )
+                            : Container(color: categoriaColor),
                       ),
-                    ],
-                  ),
+                    ),
+                    // Overlay semi-transparente para contraste do texto (permite ver a foto)
+                    Container(
+                      width: double.infinity,
+                      height: 26,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: isSelected
+                              ? [
+                                  const Color(0xFF10B981).withOpacity(0.65),
+                                  const Color(0xFF10B981).withOpacity(0.7),
+                                ]
+                              : [
+                                  Colors.black.withOpacity(0.65),
+                                  Colors.black.withOpacity(0.7),
+                                ],
+                        ),
+                        borderRadius: const BorderRadius.only(
+                          bottomLeft: Radius.circular(12),
+                          bottomRight: Radius.circular(12),
+                        ),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3.5),
+                      child: Center(
+                        child: Text(
+                          categoria.nome,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 11,
+                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                            color: Colors.white,
+                            letterSpacing: -0.2,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
         ),
+      ),
       ),
     );
   }
