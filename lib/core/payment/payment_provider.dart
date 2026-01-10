@@ -1,5 +1,6 @@
 import 'payment_transaction_data.dart';
 import 'payment_ui_notifier.dart';
+import '../../data/models/core/caixa/tipo_forma_pagamento.dart';
 
 /// Interface base para providers de pagamento
 /// 
@@ -25,6 +26,18 @@ abstract class PaymentProvider {
   /// - PaymentService verifica esta propriedade para decidir se deve
   ///   notificar UI sobre dialogs necessários
   bool get requiresUserInteraction;
+  
+  /// Retorna os tipos de pagamento que este provider suporta
+  /// 
+  /// **Exemplos:**
+  /// - Stone POS SDK: [TipoFormaPagamento.cartaoCredito, TipoFormaPagamento.cartaoDebito, TipoFormaPagamento.pix]
+  /// - Cash: [TipoFormaPagamento.dinheiro]
+  /// 
+  /// **Uso:**
+  /// - PaymentService verifica se algum provider suporta o tipo de pagamento
+  ///   solicitado antes de processar
+  /// - Se nenhum provider suportar, pode usar processamento manual ou retornar erro
+  List<TipoFormaPagamento> get supportedPaymentTypes;
   
   /// Processa um pagamento
   /// 

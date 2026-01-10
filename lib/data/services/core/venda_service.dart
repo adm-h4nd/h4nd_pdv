@@ -21,7 +21,8 @@ class VendaService {
     String? vendaId, // Opcional: para compatibilidade com código antigo
     List<String>? vendaIds, // Lista de IDs (novo formato unificado)
     required double valor,
-    required String formaPagamento,
+    required String formaPagamentoId, // 🆕 ID da forma de pagamento (Guid)
+    String? formaPagamento, // ⚠️ Opcional - mantido para compatibilidade (não é mais usado pelo backend)
     required int tipoFormaPagamento, // TipoFormaPagamento enum
     int numeroParcelas = 1,
     String? bandeiraCartao,
@@ -40,13 +41,12 @@ class VendaService {
         );
       }
       
-      debugPrint('📤 Registrando pagamento: Vendas=${idsParaUsar.join(", ")}, Valor=$valor, Forma=$formaPagamento');
+      debugPrint('📤 Registrando pagamento: Vendas=${idsParaUsar.join(", ")}, Valor=$valor, FormaPagamentoId=$formaPagamentoId');
       
       final payload = {
         'vendaIds': idsParaUsar, // Sempre incluir lista de IDs
         'valor': valor,
-        'formaPagamento': formaPagamento,
-        'tipoFormaPagamento': tipoFormaPagamento,
+        'formaPagamentoId': formaPagamentoId, // 🆕 ID da forma de pagamento (Guid)
         'numeroParcelas': numeroParcelas,
         if (bandeiraCartao != null) 'bandeiraCartao': bandeiraCartao,
         // identificadorTransacaoPIX só para PIX, não para cartão

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/payment/payment_service.dart';
 import '../../core/payment/payment_method_option.dart';
 import '../../core/payment/payment_provider.dart';
+import '../../data/models/core/caixa/tipo_forma_pagamento.dart';
 import '../../core/adaptive_layout/adaptive_layout.dart';
 import '../../presentation/providers/services_provider.dart';
 import '../../data/models/core/vendas/venda_dto.dart';
@@ -60,13 +62,24 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
 
     try {
       _paymentService = await PaymentService.getInstance();
-      _paymentMethods = _paymentService!.getAvailablePaymentMethods();
+      
+      // Obtém serviços necessários
+      final servicesProvider = Provider.of<ServicesProvider>(context, listen: false);
+      final formaPagamentoService = servicesProvider.formaPagamentoService;
+      final authService = servicesProvider.authService;
+      
+      // Busca formas de pagamento do backend
+      _paymentMethods = await _paymentService!.getAvailablePaymentMethods(
+        formaPagamentoService: formaPagamentoService,
+        authService: authService,
+      );
       
       if (_paymentMethods.isNotEmpty) {
         _selectedMethod = _paymentMethods.first;
       }
     } catch (e) {
-      AppToast.showError(context, 'Erro ao inicializar pagamento: $e');
+      debugPrint('❌ Erro ao inicializar pagamento: $e');
+      AppToast.showError(context, 'Erro ao carregar formas de pagamento: $e');
     } finally {
       setState(() {
         _isLoading = false;
@@ -109,30 +122,39 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
     });
 
     try {
-      // Determina provider key baseado no método selecionado
-      String providerKey = 'cash';
+      // Determina provider key e dados adicionais baseado no método selecionado
+      String providerKey = _selectedMethod!.providerKey;
       Map<String, dynamic>? additionalData;
 
-      if (_selectedMethod!.type == PaymentType.cash) {
+      // Verifica se é pagamento manual (providerKey começa com "manual_")
+      final isManual = providerKey.startsWith('manual_');
+      
+      if (_selectedMethod!.type == PaymentType.cash || 
+          (isManual && _selectedMethod!.tipoFormaPagamento == TipoFormaPagamento.dinheiro)) {
+        // Dinheiro (cash ou manual dinheiro)
         providerKey = 'cash';
-        // Para pagamento em dinheiro, passa o valor recebido
         additionalData = {
           'valorRecebido': valor,
         };
-      } else if (_selectedMethod!.type == PaymentType.pos) {
-        providerKey = _selectedMethod!.providerKey ?? 'cash'; // Fallback para cash se não houver providerKey
-        // Determina tipo de transação baseado no label do método selecionado
-        final tipoTransacao = _selectedMethod!.label.toLowerCase().contains('débito') || 
-                             _selectedMethod!.label.toLowerCase().contains('debito')
-            ? 'debit'
-            : 'credit';
+      } else if (_selectedMethod!.type == PaymentType.pos && !isManual) {
+        // POS integrado (SDK)
+        providerKey = _selectedMethod!.providerKey;
+        // Determina tipo de transação baseado no tipo de forma de pagamento
+        final isDebito = _selectedMethod!.tipoFormaPagamento == TipoFormaPagamento.cartaoDebito;
         additionalData = {
-          'tipoTransacao': tipoTransacao,
+          'tipoTransacao': isDebito ? 'debit' : 'credit',
           'parcelas': 1,
           'imprimirRecibo': false,
         };
+      } else if (isManual) {
+        // Pagamento manual não integrado (cartão, PIX, etc.)
+        // Não precisa de additionalData especial, apenas processa
+        providerKey = _selectedMethod!.providerKey;
+        additionalData = {};
       } else {
-        providerKey = 'cash';
+        // Fallback: usa providerKey do método
+        providerKey = _selectedMethod!.providerKey;
+        additionalData = {};
       }
 
       // Se for pagamento via POS (SDK), mostra diálogo informativo
@@ -157,8 +179,8 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
         if (_selectedMethod!.type == PaymentType.cash || 
             _selectedMethod!.type == PaymentType.pos ||
             !(result.metadata?['pending'] == true)) {
-          // Determina tipo de forma de pagamento baseado apenas no PaymentType e label
-          final tipoFormaPagamento = _determinarTipoFormaPagamento(_selectedMethod!);
+          // Usa o TipoFormaPagamento do backend (vem do PaymentMethodOption)
+          final tipoFormaPagamento = _selectedMethod!.tipoFormaPagamento.toValue();
           
           // Extrai dados de transação do resultado padronizado
           String? bandeiraCartao;
@@ -178,7 +200,7 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
           final response = await _vendaService.registrarPagamento(
             vendaId: widget.venda.id,
             valor: valor,
-            formaPagamento: _selectedMethod!.label,
+            formaPagamentoId: _selectedMethod!.formaPagamentoId, // 🆕 ID da forma de pagamento
             tipoFormaPagamento: tipoFormaPagamento,
             bandeiraCartao: bandeiraCartao,
             identificadorTransacao: identificadorTransacao,
@@ -217,21 +239,6 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
     }
   }
 
-  /// Determina o tipo de forma de pagamento baseado apenas no PaymentType e label
-  /// Não depende de provider específico
-  int _determinarTipoFormaPagamento(PaymentMethodOption method) {
-    switch (method.type) {
-      case PaymentType.cash:
-        return 1; // Dinheiro
-      case PaymentType.pos:
-        // Para POS, verifica se é débito ou crédito baseado no label
-        final isDebito = method.label.toLowerCase().contains('débito') || 
-                        method.label.toLowerCase().contains('debito');
-        return isDebito ? 3 : 2; // 3 = Débito, 2 = Crédito
-      case PaymentType.tef:
-        return 2; // Cartão (padrão)
-    }
-  }
 
   /// Mostra diálogo informativo para pagamento via SDK
   void _mostrarDialogAguardandoCartao(BuildContext context) {

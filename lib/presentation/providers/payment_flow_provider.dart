@@ -315,7 +315,7 @@ class PaymentFlowProvider extends ChangeNotifier implements PaymentUINotifier {
     String? vendaId, // Opcional: para compatibilidade
     List<String>? vendaIds, // Lista de IDs para pagamento múltiplo
     required double valor,
-    required String formaPagamento,
+    required String formaPagamentoId, // 🆕 ID da forma de pagamento (Guid)
     required int tipoFormaPagamento,
     String? bandeiraCartao,
     String? identificadorTransacao,
@@ -366,7 +366,7 @@ class PaymentFlowProvider extends ChangeNotifier implements PaymentUINotifier {
         vendaId: idsParaUsar.length == 1 ? idsParaUsar.first : null,
         vendaIds: idsParaUsar.length > 1 ? idsParaUsar : null,
         valor: valor,
-        formaPagamento: formaPagamento,
+        formaPagamentoId: formaPagamentoId, // 🆕 ID da forma de pagamento
         tipoFormaPagamento: tipoFormaPagamento,
         bandeiraCartao: bandeiraCartao,
         identificadorTransacao: identificadorTransacao,

@@ -1,5 +1,6 @@
 import '../../../../core/payment/payment_provider.dart';
 import '../../../../core/payment/payment_ui_notifier.dart'; // 🆕 Import do sistema de notificação
+import '../../../../data/models/core/caixa/tipo_forma_pagamento.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
@@ -47,6 +48,17 @@ class StonePOSAdapter implements PaymentProvider {
   /// - UI deve mostrar dialog "Aguardando cartão" durante esse tempo
   @override
   bool get requiresUserInteraction => true;
+  
+  /// Stone POS SDK suporta cartão de crédito, débito e PIX
+  /// 
+  /// **Nota:** O SDK Stone pode suportar outros tipos, mas estes são os principais
+  /// Para verificar suporte a outros tipos, consultar documentação do SDK Stone
+  @override
+  List<TipoFormaPagamento> get supportedPaymentTypes => [
+    TipoFormaPagamento.cartaoCredito,
+    TipoFormaPagamento.cartaoDebito,
+    TipoFormaPagamento.pix,
+  ];
   
   @override
   Future<void> initialize() async {

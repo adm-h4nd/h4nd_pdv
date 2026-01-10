@@ -7,6 +7,7 @@ import '../../data/models/core/vendas/produto_nota_fiscal_dto.dart';
 import '../../core/payment/payment_service.dart';
 import '../../core/payment/payment_method_option.dart';
 import '../../core/payment/payment_provider.dart';
+import '../../data/models/core/caixa/tipo_forma_pagamento.dart';
 import '../../core/events/app_event_bus.dart';
 
 /// Provider para gerenciar operações de venda (pagamento e conclusão)
@@ -132,8 +133,8 @@ class VendaProvider extends ChangeNotifier {
       final sucessoRegistro = await registrarPagamento(
         vendaId: vendaId,
         valor: valor,
-        formaPagamento: metodo.label,
-        tipoFormaPagamento: metodo.type == PaymentType.cash ? 1 : 2,
+        formaPagamentoId: metodo.formaPagamentoId, // 🆕 ID da forma de pagamento
+        tipoFormaPagamento: metodo.tipoFormaPagamento.toValue(), // 🆕 Tipo do backend
         bandeiraCartao: paymentResult.metadata?['cardBrand'] as String?,
         identificadorTransacao: paymentResult.transactionId,
         produtos: produtosNotaParcial?.map((p) => p.toJson()).toList(),
@@ -185,7 +186,7 @@ class VendaProvider extends ChangeNotifier {
   Future<bool> registrarPagamento({
     required String vendaId,
     required double valor,
-    required String formaPagamento,
+    required String formaPagamentoId, // 🆕 ID da forma de pagamento (Guid)
     required int tipoFormaPagamento,
     int numeroParcelas = 1,
     String? bandeiraCartao,
@@ -193,12 +194,12 @@ class VendaProvider extends ChangeNotifier {
     List<Map<String, dynamic>>? produtos, // Produtos para nota fiscal parcial
   }) async {
     try {
-      debugPrint('📤 [VendaProvider] Registrando pagamento no servidor: Venda=$vendaId, Valor=$valor');
+      debugPrint('📤 [VendaProvider] Registrando pagamento no servidor: Venda=$vendaId, Valor=$valor, FormaPagamentoId=$formaPagamentoId');
 
       final response = await _vendaService.registrarPagamento(
         vendaId: vendaId,
         valor: valor,
-        formaPagamento: formaPagamento,
+        formaPagamentoId: formaPagamentoId, // 🆕 ID da forma de pagamento
         tipoFormaPagamento: tipoFormaPagamento,
         numeroParcelas: numeroParcelas,
         bandeiraCartao: bandeiraCartao,

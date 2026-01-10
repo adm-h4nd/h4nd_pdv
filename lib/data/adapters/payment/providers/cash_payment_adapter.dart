@@ -1,5 +1,6 @@
 import '../../../../core/payment/payment_provider.dart';
 import '../../../../core/payment/payment_ui_notifier.dart'; // 🆕 Import do PaymentUINotifier
+import '../../../../data/models/core/caixa/tipo_forma_pagamento.dart';
 
 /// Provider de pagamento em dinheiro (não precisa de SDK)
 class CashPaymentAdapter implements PaymentProvider {
@@ -20,6 +21,10 @@ class CashPaymentAdapter implements PaymentProvider {
   /// - Validação é apenas matemática (valor recebido >= valor necessário)
   @override
   bool get requiresUserInteraction => false;
+  
+  /// Cash suporta apenas pagamento em dinheiro
+  @override
+  List<TipoFormaPagamento> get supportedPaymentTypes => [TipoFormaPagamento.dinheiro];
   
   @override
   Future<void> initialize() async {

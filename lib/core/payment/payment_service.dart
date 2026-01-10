@@ -5,6 +5,11 @@ import 'payment_provider.dart';
 import 'payment_method_option.dart';
 import 'payment_ui_notifier.dart'; // 🆕 Import do sistema de notificação
 import '../../data/adapters/payment/payment_provider_registry.dart';
+import '../../data/services/core/forma_pagamento_service.dart';
+import '../../data/services/core/auth_service.dart';
+import '../../data/models/core/caixa/forma_pagamento_disponivel_dto.dart';
+import '../../data/models/core/caixa/tipo_forma_pagamento.dart';
+import '../../data/adapters/payment/providers/manual_payment_adapter.dart';
 
 /// Serviço principal de pagamento
 class PaymentService {
@@ -38,45 +43,222 @@ class PaymentService {
   }
   
   /// Retorna métodos de pagamento disponíveis para este dispositivo
-  List<PaymentMethodOption> getAvailablePaymentMethods() {
-    if (_config == null) {
-      return [PaymentMethodOption.cash()];
-    }
+  /// 
+  /// **Parâmetros:**
+  /// - [formaPagamentoService] - Service para buscar formas de pagamento do backend (obrigatório)
+  /// - [authService] - Service para obter empresa selecionada (obrigatório)
+  /// 
+  /// **Fluxo:**
+  /// 1. Busca formas de pagamento do backend para a empresa atual
+  /// 2. Para cada forma:
+  ///    - Se isIntegrada = true: procura provider SDK compatível
+  ///    - Se isIntegrada = false ou não há provider: usa ManualPaymentAdapter
+  /// 3. Cria PaymentMethodOption com TipoFormaPagamento do backend
+  Future<List<PaymentMethodOption>> getAvailablePaymentMethods({
+    required FormaPagamentoService formaPagamentoService,
+    required AuthService authService,
+  }) async {
+    debugPrint('💳 [PaymentService] Buscando formas de pagamento do backend...');
     
+    try {
+      // 1. Obtém empresa selecionada
+      final empresaId = await authService.getSelectedEmpresa();
+      if (empresaId == null || empresaId.isEmpty) {
+        debugPrint('⚠️ [PaymentService] Nenhuma empresa selecionada, retornando métodos padrão');
+        return _getDefaultPaymentMethods();
+      }
+      
+      // 2. Busca formas de pagamento do backend
+      final response = await formaPagamentoService.getFormasPagamentoDisponiveisPorEmpresa(empresaId);
+      
+      if (!response.success || response.data == null || response.data!.isEmpty) {
+        debugPrint('⚠️ [PaymentService] Nenhuma forma de pagamento encontrada, retornando métodos padrão');
+        return _getDefaultPaymentMethods();
+      }
+      
+      final formasPagamento = response.data!;
+      debugPrint('✅ [PaymentService] ${formasPagamento.length} formas de pagamento encontradas');
+      
+      // 3. Ordena por ordemExibicao
+      formasPagamento.sort((a, b) => a.ordemExibicao.compareTo(b.ordemExibicao));
+      
+      // 4. Converte formas de pagamento em PaymentMethodOption
+      final methods = <PaymentMethodOption>[];
+      
+      for (final formaPagamento in formasPagamento) {
+        // Apenas formas que devem ser exibidas no PDV
+        if (!formaPagamento.exibirNoPDV) {
+          continue;
+        }
+        
+        // Encontra provider compatível (se integrada)
+        PaymentProvider? provider;
+        String providerKey;
+        
+        if (formaPagamento.isIntegrada) {
+          // Busca provider SDK que suporta este tipo
+          provider = _findProviderForPaymentType(formaPagamento.tipoBase);
+          
+          if (provider != null) {
+            // Usa provider SDK
+            providerKey = _getProviderKey(provider);
+            debugPrint('✅ [PaymentService] Forma "${formaPagamento.nome}" usará SDK: ${provider.providerName}');
+          } else {
+            // SDK não disponível, usa manual
+            providerKey = 'manual_${formaPagamento.tipoBase.toValue()}';
+            debugPrint('⚠️ [PaymentService] Forma "${formaPagamento.nome}" é integrada mas SDK não disponível, usando manual');
+          }
+        } else {
+          // Não integrada, sempre usa manual
+          providerKey = 'manual_${formaPagamento.tipoBase.toValue()}';
+          debugPrint('ℹ️ [PaymentService] Forma "${formaPagamento.nome}" não integrada, usando manual');
+        }
+        
+        // Cria PaymentMethodOption
+        final method = _createPaymentMethodOption(
+          formaPagamento: formaPagamento,
+          providerKey: providerKey,
+          provider: provider,
+        );
+        
+        methods.add(method);
+      }
+      
+      debugPrint('✅ [PaymentService] ${methods.length} métodos de pagamento disponíveis');
+      return methods;
+      
+    } catch (e, stackTrace) {
+      debugPrint('❌ [PaymentService] Erro ao buscar formas de pagamento: $e');
+      debugPrint('📚 Stack trace: $stackTrace');
+      return _getDefaultPaymentMethods();
+    }
+  }
+  
+  /// Retorna métodos de pagamento padrão (fallback)
+  List<PaymentMethodOption> _getDefaultPaymentMethods() {
     final methods = <PaymentMethodOption>[];
     
     // Dinheiro sempre disponível
-    if (_config!.canUseProvider('cash')) {
+    if (_config?.canUseProvider('cash') ?? true) {
       methods.add(PaymentMethodOption.cash());
     }
-    
-    // Stone POS SDK - Crédito (se disponível)
-    if (_config!.canUseProvider('stone_pos')) {
-      methods.add(PaymentMethodOption(
-        type: PaymentType.pos,
-        label: 'Cartão Crédito',
-        icon: Icons.credit_card,
-        color: Colors.blue.shade700,
-        providerKey: 'stone_pos',
-      ));
-      
-      // Stone POS SDK - Débito (se disponível)
-      methods.add(PaymentMethodOption(
-        type: PaymentType.pos,
-        label: 'Cartão Débito',
-        icon: Icons.credit_card,
-        color: Colors.blue.shade600,
-        providerKey: 'stone_pos',
-      ));
-    }
-    
-    // Adicionar outros providers conforme necessário
     
     return methods;
   }
   
+  /// Encontra provider SDK que suporta o tipo de pagamento
+  PaymentProvider? _findProviderForPaymentType(TipoFormaPagamento tipo) {
+    final registeredProviders = PaymentProviderRegistry.getRegisteredProviders();
+    
+    for (final providerKey in registeredProviders) {
+      // Ignora cash (já tratado separadamente)
+      if (providerKey == 'cash') continue;
+      
+      final provider = PaymentProviderRegistry.getProvider(providerKey);
+      if (provider != null && 
+          provider.isAvailable && 
+          provider.supportedPaymentTypes.contains(tipo)) {
+        return provider;
+      }
+    }
+    
+    return null;
+  }
+  
+  /// Obtém a chave do provider para usar no registry
+  String _getProviderKey(PaymentProvider provider) {
+    // Mapeia provider para sua chave no registry
+    if (provider.providerName.toLowerCase().contains('stone')) {
+      return 'stone_pos';
+    }
+    // Adicionar outros mapeamentos conforme necessário
+    
+    // Fallback: usa nome do provider em lowercase
+    return provider.providerName.toLowerCase().replaceAll(' ', '_');
+  }
+  
+  /// Cria PaymentMethodOption a partir de FormaPagamentoDisponivelDto
+  PaymentMethodOption _createPaymentMethodOption({
+    required FormaPagamentoDisponivelDto formaPagamento,
+    required String providerKey,
+    PaymentProvider? provider,
+  }) {
+    // Determina PaymentType baseado no provider (técnico)
+    PaymentType paymentType;
+    if (provider != null) {
+      paymentType = provider.paymentType;
+    } else {
+      // Para manuais, usa TEF como padrão
+      paymentType = PaymentType.tef;
+    }
+    
+    // Determina ícone e cor baseado no tipo
+    IconData icon;
+    Color color;
+    
+    switch (formaPagamento.tipoBase) {
+      case TipoFormaPagamento.dinheiro:
+        icon = Icons.money;
+        color = Colors.green;
+        break;
+      case TipoFormaPagamento.cartaoCredito:
+      case TipoFormaPagamento.cartaoDebito:
+        icon = Icons.credit_card;
+        color = Colors.blue.shade700;
+        break;
+      case TipoFormaPagamento.pix:
+        icon = Icons.qr_code;
+        color = Colors.orange.shade700;
+        break;
+      case TipoFormaPagamento.boleto:
+        icon = Icons.receipt;
+        color = Colors.purple.shade700;
+        break;
+      case TipoFormaPagamento.cheque:
+        icon = Icons.description;
+        color = Colors.grey.shade700;
+        break;
+      case TipoFormaPagamento.valeRefeicao:
+      case TipoFormaPagamento.valeAlimentacao:
+        icon = Icons.card_giftcard;
+        color = Colors.red.shade700;
+        break;
+      case TipoFormaPagamento.outro:
+        icon = Icons.payment;
+        color = Colors.grey.shade600;
+        break;
+    }
+    
+    return PaymentMethodOption(
+      type: paymentType,
+      label: formaPagamento.nome,
+      icon: icon,
+      color: color,
+      providerKey: providerKey,
+      tipoFormaPagamento: formaPagamento.tipoBase, // 🎯 Tipo do backend
+      formaPagamentoId: formaPagamento.formaPagamentoId, // 🎯 ID da forma de pagamento
+    );
+  }
+  
   /// Obtém um provider específico
+  /// 
+  /// Se o providerKey começar com "manual_", cria um ManualPaymentAdapter dinamicamente
   Future<PaymentProvider?> getProvider(String providerKey) async {
+    // Se for provider manual, cria dinamicamente
+    if (providerKey.startsWith('manual_')) {
+      final tipoValue = int.tryParse(providerKey.replaceFirst('manual_', ''));
+      if (tipoValue != null) {
+        final tipo = TipoFormaPagamento.fromValue(tipoValue);
+        if (tipo != null) {
+          debugPrint('🔧 [PaymentService] Criando ManualPaymentAdapter para tipo: $tipo');
+          return ManualPaymentAdapter(tipoPagamento: tipo);
+        }
+      }
+      debugPrint('⚠️ [PaymentService] Tipo de pagamento inválido para provider manual: $providerKey');
+      return null;
+    }
+    
+    // Provider SDK do registry
     final settings = _config?.providerSettings?[providerKey];
     final provider = PaymentProviderRegistry.getProvider(providerKey, settings: settings);
     

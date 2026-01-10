@@ -296,13 +296,13 @@ class _HomeUnifiedScreenState extends State<HomeUnifiedScreen> {
     // Verificar se está configurado como servidor local
     final config = ConnectionConfigService.getCurrentConfig();
     if (config == null || !config.isLocal) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
             content: Text('Esta funcionalidade só está disponível quando conectado ao servidor local'),
-            duration: Duration(seconds: 3),
-          ),
-        );
+          duration: Duration(seconds: 3),
+        ),
+      );
       }
       return;
     }
