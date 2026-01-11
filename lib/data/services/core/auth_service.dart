@@ -423,8 +423,11 @@ class AuthService {
     final empresas = _getEmpresasFromToken(data.token);
     if (empresas != null && empresas.isNotEmpty) {
       await _saveEmpresas(empresas);
-      // Seleciona a primeira empresa automaticamente
-      await setSelectedEmpresa(empresas[0].id);
+      // Seleciona a primeira empresa automaticamente apenas se houver uma única empresa
+      // Se houver múltiplas, o usuário deve escolher na tela de seleção
+      if (empresas.length == 1) {
+        await setSelectedEmpresa(empresas[0].id);
+      }
     }
   }
 

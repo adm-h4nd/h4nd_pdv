@@ -27,14 +27,22 @@ import '../dialogs/selecionar_mesa_comanda_dialog.dart';
 import '../patio/patio_screen.dart';
 import '../pedidos/pedidos_screen.dart';
 import '../profile/profile_screen.dart';
+import '../configuracao/pdv_caixa_config_screen.dart';
+import '../caixa/abrir_caixa_screen.dart';
+import '../caixa/caixa_aberto_screen.dart';
+import '../../data/repositories/configuracao_pdv_caixa_repository.dart';
+import '../../core/validators/caixa_validator.dart';
+import '../../core/services/device_id_service.dart';
 
 /// Tela de home unificada e personalizável
 class HomeUnifiedScreen extends StatefulWidget {
   final ValueNotifier<int>? navigationIndexNotifier;
+  final void Function(bool?)? onCaixaStatusChanged; // Callback para atualizar status do caixa no HomeNavigation
   
   const HomeUnifiedScreen({
     super.key,
     this.navigationIndexNotifier,
+    this.onCaixaStatusChanged,
   });
 
   @override
@@ -44,9 +52,12 @@ class HomeUnifiedScreen extends StatefulWidget {
 class _HomeUnifiedScreenState extends State<HomeUnifiedScreen> {
   final _configRepo = HomeWidgetConfigRepository();
   final _pedidoRepo = PedidoLocalRepository();
+  final _configPdvCaixaRepo = ConfiguracaoPdvCaixaRepository();
   int? _setor;
   bool _isLoading = true;
   bool _isAbrindoNovoPedido = false; // Proteção contra múltiplos cliques
+  String? _deviceId; // Device ID (código único do dispositivo)
+  bool? _caixaAberto; // null = ainda não verificou, true = aberto, false = fechado
 
   @override
   void initState() {
@@ -75,6 +86,12 @@ class _HomeUnifiedScreenState extends State<HomeUnifiedScreen> {
           debugPrint('⚠️ Erro ao carregar configuração do restaurante: $e');
         });
         
+        // Carrega Device ID (código único do dispositivo)
+        _carregarDeviceId();
+        
+        // Verifica status do caixa
+        _verificarStatusCaixa(servicesProvider);
+        
         if (mounted) {
           setState(() {
             _isLoading = false;
@@ -94,6 +111,48 @@ class _HomeUnifiedScreenState extends State<HomeUnifiedScreen> {
       }
     }
   }
+
+  /// Carrega o Device ID (código único do dispositivo)
+  Future<void> _carregarDeviceId() async {
+    try {
+      final deviceId = await DeviceIdService.getDeviceId();
+      if (mounted) {
+        setState(() {
+          _deviceId = deviceId;
+        });
+      }
+    } catch (e) {
+      debugPrint('❌ Erro ao carregar Device ID: $e');
+    }
+  }
+
+  /// Verifica o status do caixa (aberto ou fechado)
+  Future<void> _verificarStatusCaixa(ServicesProvider servicesProvider) async {
+    try {
+      final validacao = await CaixaValidator.validarCaixa(
+        authService: servicesProvider.authService,
+        servicesProvider: servicesProvider,
+      );
+      
+      if (mounted) {
+        setState(() {
+          _caixaAberto = validacao.isValid;
+        });
+        // Notifica o HomeNavigation sobre a mudança de status
+        widget.onCaixaStatusChanged?.call(_caixaAberto);
+      }
+    } catch (e) {
+      debugPrint('❌ Erro ao verificar status do caixa: $e');
+      if (mounted) {
+        setState(() {
+          _caixaAberto = false; // Em caso de erro, assume fechado
+        });
+        // Notifica o HomeNavigation sobre a mudança de status
+        widget.onCaixaStatusChanged?.call(false);
+      }
+    }
+  }
+
 
   /// Verifica se precisa sincronizar e sincroniza automaticamente após inicialização completa
   void _verificarESincronizar(ServicesProvider servicesProvider) {
@@ -378,6 +437,18 @@ class _HomeUnifiedScreenState extends State<HomeUnifiedScreen> {
     }
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Atualiza status do caixa sempre que a tela é exibida
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        final servicesProvider = Provider.of<ServicesProvider>(context, listen: false);
+        _verificarStatusCaixa(servicesProvider);
+      }
+    });
+  }
+
   // Método será usado na próxima etapa quando implementarmos o novo layout
   // ignore: unused_element
   int? _getBadgeCount(HomeWidgetType type) {
@@ -536,6 +607,110 @@ class _HomeUnifiedScreenState extends State<HomeUnifiedScreen> {
         color: const Color(0xFF7C3AED), // Roxo
         subtitle: 'Gerenciar impressoras',
         onTap: () {},
+      ),
+    );
+    
+    // Botão de Caixa - verifica se está aberto para navegar para tela correta
+    final configPdvCaixa = _configPdvCaixaRepo.carregar();
+    if (configPdvCaixa != null) {
+      // Determina o subtítulo baseado no status do caixa
+      String subtitleCaixa = 'Gerenciar caixa';
+      if (_caixaAberto == true) {
+        subtitleCaixa = 'Caixa Aberto';
+      } else if (_caixaAberto == false) {
+        subtitleCaixa = 'Caixa Fechado';
+      } else {
+        subtitleCaixa = 'Verificando...';
+      }
+      
+      buttons.add(
+        _ButtonData(
+          title: 'Caixa',
+          icon: Icons.account_balance_wallet,
+          color: _caixaAberto == true 
+              ? const Color(0xFF059669) // Verde quando aberto
+              : const Color(0xFFDC2626), // Vermelho quando fechado
+          subtitle: subtitleCaixa,
+          onTap: () async {
+            // Verificar se o caixa está aberto
+            final servicesProvider = Provider.of<ServicesProvider>(context, listen: false);
+            final validacao = await CaixaValidator.validarCaixa(
+              authService: servicesProvider.authService,
+              servicesProvider: servicesProvider,
+            );
+            
+            if (mounted) {
+              if (validacao.isValid && validacao.cicloAberto != null) {
+                // Caixa está aberto - navegar para tela de gerenciamento
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => AdaptiveLayout(
+                      child: CaixaAbertoScreen(
+                        cicloCaixa: validacao.cicloAberto!,
+                      ),
+                    ),
+                  ),
+                ).then((_) {
+                  // Atualiza status do caixa ao voltar da tela
+                  if (mounted) {
+                    _verificarStatusCaixa(servicesProvider);
+                  }
+                });
+              } else {
+                // Caixa não está aberto - navegar para tela de abertura
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => const AdaptiveLayout(
+                      child: AbrirCaixaScreen(),
+                    ),
+                  ),
+                ).then((_) {
+                  // Atualiza status do caixa ao voltar da tela
+                  if (mounted) {
+                    _verificarStatusCaixa(servicesProvider);
+                  }
+                });
+              }
+            }
+          },
+        ),
+      );
+    }
+    
+    // Obter configuração atual de PDV e Caixa
+    String subtitlePdvCaixa = 'Configurar PDV e Caixa';
+    if (configPdvCaixa != null) {
+      // Ordem: PDV, Caixa, Código
+      final buffer = StringBuffer();
+      buffer.writeln('PDV: ${configPdvCaixa.pdvNome}');
+      buffer.writeln('Caixa: ${configPdvCaixa.caixaNome}');
+      if (_deviceId != null && _deviceId!.isNotEmpty) {
+        buffer.write('Código: $_deviceId');
+      }
+      subtitlePdvCaixa = buffer.toString();
+    }
+    
+    buttons.add(
+      _ButtonData(
+        title: 'Configuração PDV/Caixa',
+        icon: Icons.point_of_sale,
+        color: const Color(0xFF6366F1), // Indigo
+        subtitle: subtitlePdvCaixa,
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => AdaptiveLayout(
+                child: const PdvCaixaConfigScreen(allowBack: true),
+              ),
+            ),
+          ).then((_) {
+            // Recarregar Device ID após voltar da tela de configuração
+            if (mounted) {
+              setState(() {});
+              _carregarDeviceId();
+            }
+          });
+        },
       ),
     );
     buttons.add(

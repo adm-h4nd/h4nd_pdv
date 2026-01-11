@@ -3,6 +3,7 @@ import '../../../core/payment/payment_transaction_data.dart';
 import '../../models/core/api_response.dart';
 import '../../models/core/vendas/venda_dto.dart';
 import '../../models/core/vendas/venda_resumo_dto.dart';
+import '../../repositories/configuracao_pdv_caixa_repository.dart';
 import 'package:flutter/foundation.dart';
 
 /// Serviço para gerenciamento de vendas
@@ -43,6 +44,16 @@ class VendaService {
       
       debugPrint('📤 Registrando pagamento: Vendas=${idsParaUsar.join(", ")}, Valor=$valor, FormaPagamentoId=$formaPagamentoId');
       
+      // Buscar configuração de PDV e Caixa (obrigatório para registrar pagamento)
+      final configRepo = ConfiguracaoPdvCaixaRepository();
+      final config = configRepo.carregar();
+      
+      if (config == null) {
+        return ApiResponse<VendaDto>.error(
+          message: 'PDV e Caixa não configurados. É necessário configurar antes de registrar pagamentos.',
+        );
+      }
+      
       final payload = {
         'vendaIds': idsParaUsar, // Sempre incluir lista de IDs
         'valor': valor,
@@ -62,6 +73,10 @@ class VendaService {
         // Campos legados para compatibilidade (usar cardBrandName se disponível)
         if (transactionData?.cardBrandName != null && bandeiraCartao == null) 
           'bandeiraCartao': transactionData!.cardBrandName,
+        
+        // Campos para movimentação de caixa (obrigatórios - backend buscará ciclo aberto automaticamente)
+        'pdvId': config.pdvId,
+        'caixaId': config.caixaId,
       };
       
       debugPrint('📤 Payload do pagamento: $payload');

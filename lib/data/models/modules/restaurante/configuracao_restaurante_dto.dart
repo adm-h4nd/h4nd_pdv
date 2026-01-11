@@ -26,6 +26,9 @@ class ConfiguracaoRestauranteDto {
   final bool controlePorComanda;
   final bool controlePorMesaOuComanda;
   
+  // Configurações de Caixa
+  final bool exibirValoresFechamentoCaixa;
+  
   // Timestamps
   final DateTime createdAt;
   final DateTime? updatedAt;
@@ -44,6 +47,7 @@ class ConfiguracaoRestauranteDto {
     required this.controlePorMesa,
     required this.controlePorComanda,
     required this.controlePorMesaOuComanda,
+    this.exibirValoresFechamentoCaixa = true,
     required this.createdAt,
     this.updatedAt,
   });
@@ -93,6 +97,7 @@ class ConfiguracaoRestauranteDto {
       controlePorMesa: json['controlePorMesa'] as bool? ?? (tipoControleVenda == TipoControleVenda.porMesa.value),
       controlePorComanda: json['controlePorComanda'] as bool? ?? (tipoControleVenda == TipoControleVenda.porComanda.value),
       controlePorMesaOuComanda: json['controlePorMesaOuComanda'] as bool? ?? (tipoControleVenda == TipoControleVenda.porMesaOuComanda.value),
+      exibirValoresFechamentoCaixa: json['exibirValoresFechamentoCaixa'] as bool? ?? true,
       createdAt: createdAt,
       updatedAt: updatedAt,
     );
@@ -113,6 +118,7 @@ class ConfiguracaoRestauranteDto {
       'controlePorMesa': controlePorMesa,
       'controlePorComanda': controlePorComanda,
       'controlePorMesaOuComanda': controlePorMesaOuComanda,
+      'exibirValoresFechamentoCaixa': exibirValoresFechamentoCaixa,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt?.toIso8601String(),
     };

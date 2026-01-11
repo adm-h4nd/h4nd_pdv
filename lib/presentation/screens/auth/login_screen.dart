@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/services_provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/adaptive_layout/adaptive_layout.dart';
 import '../../../core/config/connection_config_service.dart';
 import '../../widgets/common/h4nd_logo.dart';
 import '../../widgets/common/home_navigation.dart';
 import '../server_config/server_config_screen.dart';
+import '../../../screens/configuracao/pdv_caixa_config_screen.dart';
+import '../../../core/validators/configuracao_pdv_caixa_validator.dart';
+import 'empresa_selection_screen.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 /// Tela de login
@@ -98,14 +102,58 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
     );
 
     if (success && mounted) {
-      // Navega para a home usando MaterialPageRoute
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (context) => const AdaptiveLayout(
-            child: HomeNavigation(),
+      // Aguarda um frame para garantir que o estado foi atualizado
+      await Future.delayed(const Duration(milliseconds: 100));
+      
+      if (!mounted) return;
+      
+      // Verificar se o usuário tem múltiplas empresas
+      final servicesProvider = Provider.of<ServicesProvider>(context, listen: false);
+      final authService = servicesProvider.authService;
+      
+      final hasMultipleEmpresas = await authService.hasMultipleEmpresas();
+      
+      if (!mounted) return;
+      
+      if (hasMultipleEmpresas) {
+        // Se tem múltiplas empresas, mostrar tela de seleção
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (context) => const AdaptiveLayout(
+              child: EmpresaSelectionScreen(),
+            ),
           ),
-        ),
+        );
+      } else {
+        // Se tem apenas uma empresa, continuar com o fluxo normal
+        // (a empresa já foi selecionada automaticamente no login)
+      final configValida = await ConfiguracaoPdvCaixaValidator.validarConfiguracao(
+        authService: authService,
+        servicesProvider: servicesProvider,
       );
+
+      if (!mounted) return;
+
+      if (!configValida) {
+        // Se configuração não é válida, mostrar tela de configuração
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (context) => const AdaptiveLayout(
+              child: PdvCaixaConfigScreen(allowBack: false),
+            ),
+          ),
+        );
+      } else {
+        // Se configuração é válida, ir para home
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (context) => const AdaptiveLayout(
+              child: HomeNavigation(),
+            ),
+          ),
+        );
+        }
+      }
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

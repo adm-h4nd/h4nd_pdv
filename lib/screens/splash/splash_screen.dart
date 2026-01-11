@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/adaptive_layout/adaptive_layout.dart';
 import '../../core/config/connection_config_service.dart';
+import '../../core/validators/configuracao_pdv_caixa_validator.dart';
 import '../../presentation/providers/auth_provider.dart';
+import '../../presentation/providers/services_provider.dart';
 import '../../presentation/widgets/common/h4nd_logo.dart';
 import '../../presentation/widgets/common/home_navigation.dart';
 import '../../presentation/screens/auth/login_screen.dart';
 import '../../presentation/screens/server_config/server_config_screen.dart';
+import '../configuracao/pdv_caixa_config_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -71,6 +74,31 @@ class _SplashScreenState extends State<SplashScreen>
       final isAuthenticated = await authProvider.checkAuth();
       
       if (!mounted) return;
+      
+      if (isAuthenticated) {
+        // Verificar configuração de PDV e Caixa antes de ir para home
+        final servicesProvider = Provider.of<ServicesProvider>(context, listen: false);
+        final authService = servicesProvider.authService;
+        
+        final configValida = await ConfiguracaoPdvCaixaValidator.validarConfiguracao(
+          authService: authService,
+          servicesProvider: servicesProvider,
+        );
+
+        if (!mounted) return;
+
+        if (!configValida) {
+          // Se configuração não é válida, mostrar tela de configuração
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (context) => const AdaptiveLayout(
+                child: PdvCaixaConfigScreen(allowBack: false),
+              ),
+            ),
+          );
+          return;
+        }
+      }
       
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(

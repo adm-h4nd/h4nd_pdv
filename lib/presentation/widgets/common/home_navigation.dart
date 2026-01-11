@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter/foundation.dart';
 import '../../../presentation/providers/auth_provider.dart';
 import '../../../presentation/providers/services_provider.dart';
 import '../../../screens/home/home_unified_screen.dart';
@@ -10,6 +11,11 @@ import '../../../screens/pedidos/pedidos_screen.dart';
 import '../../../screens/balcao/balcao_screen.dart';
 import '../../../screens/patio/patio_screen.dart';
 import '../../../presentation/widgets/common/h4nd_logo.dart';
+import '../../../core/validators/configuracao_pdv_caixa_validator.dart';
+import '../../../core/validators/caixa_validator.dart';
+import '../../../screens/configuracao/pdv_caixa_config_screen.dart';
+import '../../../core/adaptive_layout/adaptive_layout.dart';
+import '../../../data/repositories/configuracao_pdv_caixa_repository.dart';
 
 /// Widget principal de navegação com bottom navigation bar
 class HomeNavigation extends StatefulWidget {
@@ -24,6 +30,7 @@ class _HomeNavigationState extends State<HomeNavigation> {
   int? _setor;
   bool _isLoadingSetor = true;
   final ValueNotifier<int> _navigationIndexNotifier = ValueNotifier<int>(0);
+  bool? _caixaAberto; // null = ainda não verificou, true = aberto, false = fechado
 
   @override
   void initState() {
@@ -34,8 +41,97 @@ class _HomeNavigationState extends State<HomeNavigation> {
     _navigationIndexNotifier.addListener(_onNavigationIndexChanged);
     // Usa WidgetsBinding para garantir que o contexto está pronto
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _verificarConfiguracaoPdvCaixa();
       _loadSetor();
+      _verificarCaixaAberto();
     });
+  }
+
+  /// Atualiza o status do caixa (chamado pela Home quando verifica o status)
+  void _atualizarStatusCaixa(bool? caixaAberto) {
+    if (mounted) {
+      setState(() {
+        _caixaAberto = caixaAberto;
+      });
+    }
+  }
+
+  /// Verifica se o caixa está aberto (usado apenas na inicialização)
+  /// Depois disso, a Home controla o status através do callback
+  Future<void> _verificarCaixaAberto() async {
+    try {
+      final servicesProvider = Provider.of<ServicesProvider>(context, listen: false);
+      final configRepo = ConfiguracaoPdvCaixaRepository();
+      final config = configRepo.carregar();
+      
+      if (config != null) {
+        final validacao = await CaixaValidator.validarCaixa(
+          authService: servicesProvider.authService,
+          servicesProvider: servicesProvider,
+        );
+        
+        if (mounted) {
+          setState(() {
+            _caixaAberto = validacao.isValid;
+          });
+        }
+      } else {
+        // Se não tem configuração, assume que não precisa verificar
+        if (mounted) {
+          setState(() {
+            _caixaAberto = true; // Permite navegação se não tem configuração
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ [HomeNavigation] Erro ao verificar caixa aberto: $e');
+      // Em caso de erro, assume que está fechado para ser mais seguro
+      if (mounted) {
+        setState(() {
+          _caixaAberto = false;
+        });
+      }
+    }
+  }
+
+  /// Verifica se há configuração válida de PDV e Caixa
+  /// Se não houver, redireciona para tela de configuração
+  Future<void> _verificarConfiguracaoPdvCaixa() async {
+    try {
+      final servicesProvider = Provider.of<ServicesProvider>(context, listen: false);
+      final authService = servicesProvider.authService;
+      
+      final configValida = await ConfiguracaoPdvCaixaValidator.validarConfiguracao(
+        authService: authService,
+        servicesProvider: servicesProvider,
+      );
+
+      if (!mounted) return;
+
+      if (!configValida) {
+        // Se configuração não é válida, redirecionar para tela de configuração
+        debugPrint('⚠️ [HomeNavigation] Configuração PDV/Caixa inválida, redirecionando...');
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (context) => const AdaptiveLayout(
+              child: PdvCaixaConfigScreen(allowBack: false),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('❌ [HomeNavigation] Erro ao verificar configuração PDV/Caixa: $e');
+      // Em caso de erro, também redirecionar para configuração
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (context) => const AdaptiveLayout(
+              child: PdvCaixaConfigScreen(allowBack: false),
+            ),
+          ),
+        );
+      }
+    }
   }
 
   void _onNavigationIndexChanged() {
@@ -64,6 +160,12 @@ class _HomeNavigationState extends State<HomeNavigation> {
         });
       }
     }
+    // Atualiza status do caixa sempre que a tela é exibida
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _verificarCaixaAberto();
+      }
+    });
   }
 
   Future<void> _loadSetor() async {
@@ -120,6 +222,7 @@ class _HomeNavigationState extends State<HomeNavigation> {
       label: 'Home',
       screen: HomeUnifiedScreen(
         navigationIndexNotifier: _navigationIndexNotifier,
+        onCaixaStatusChanged: _atualizarStatusCaixa,
       ),
     );
 
@@ -258,6 +361,104 @@ class _HomeNavigationState extends State<HomeNavigation> {
         child: H4NDLogo(
           fontSize: 24,
           showPdv: false, // Apenas H4ND, sem texto inferior
+        ),
+      ),
+    );
+  }
+
+  /// Constrói a barra inferior (bottom navigation ou mensagem de caixa fechado)
+  Widget? _buildBottomBar(
+    BuildContext context,
+    List<NavigationItem> navigationItems,
+  ) {
+    // Se ainda está verificando, não mostra nada
+    if (_caixaAberto == null) {
+      return null;
+    }
+    
+    // Se caixa não está aberto, mostra mensagem informativa
+    if (_caixaAberto == false) {
+      return _buildCaixaFechadoMessage(context);
+    }
+    
+    // Se caixa está aberto, mostra bottom navigation
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 20,
+            offset: const Offset(0, -4),
+            spreadRadius: 0,
+          ),
+        ],
+      ),
+      child: _buildBottomNavigationContent(context, navigationItems),
+    );
+  }
+
+  /// Constrói mensagem informativa quando caixa não está aberto
+  Widget _buildCaixaFechadoMessage(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.orange.shade50,
+          border: Border(
+            top: BorderSide(
+              color: Colors.orange.shade200,
+              width: 1,
+            ),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, -2),
+              spreadRadius: 0,
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade100,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.point_of_sale,
+                color: Colors.orange.shade700,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Caixa Fechado',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.orange.shade900,
+                        ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'É necessário abrir o caixa para iniciar o atendimento',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.orange.shade800,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -420,20 +621,7 @@ class _HomeNavigationState extends State<HomeNavigation> {
               ],
             ),
           ),
-          bottomNavigationBar: Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.08),
-                  blurRadius: 20,
-                  offset: const Offset(0, -4),
-                  spreadRadius: 0,
-                ),
-              ],
-            ),
-            child: _buildBottomNavigationContent(context, navigationItems),
-          ),
+          bottomNavigationBar: _buildBottomBar(context, navigationItems),
         );
       },
     );
